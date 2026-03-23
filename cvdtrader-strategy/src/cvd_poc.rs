@@ -1,4 +1,7 @@
-use cvdtrader_core::{Candle, ExitReason, GlobalState, Position, PositionSide, Signal, TradeSignal};
+use chrono::{DateTime, Utc};
+use cvdtrader_core::{
+    Candle, ExitReason, GlobalState, Position, PositionSide, Side, Signal, Trade, TradeSignal,
+};
 use cvdtrader_market_data::{IndicatorCompute, VolumeProfileBuilder};
 use tracing::{debug, info, warn};
 
@@ -59,7 +62,9 @@ impl CvdPocStrategy {
         let has_position = self.state.has_position(&candle.symbol).await;
 
         // Evaluate signal
-        let signal = self.evaluator.evaluate_signal(candle, &self.indicators, has_position);
+        let signal = self
+            .evaluator
+            .evaluate_signal(candle, &self.indicators, has_position);
 
         if let Some(ref sig) = signal {
             if sig.is_valid() {
@@ -88,7 +93,8 @@ impl CvdPocStrategy {
         let candle = candles.first()?;
 
         // Check exit conditions
-        self.evaluator.check_exit(&position, candle, &self.indicators)
+        self.evaluator
+            .check_exit(&position, candle, &self.indicators)
     }
 
     /// Manage position exit based on CVD behavior
@@ -109,7 +115,7 @@ impl CvdPocStrategy {
 
         // Determine favorable CVD sign for position
         let fav_sign = match position.side {
-            PositionSide::Long => 1.0,  // Positive CVD is favorable
+            PositionSide::Long => 1.0,   // Positive CVD is favorable
             PositionSide::Short => -1.0, // Negative CVD is favorable
         };
 
@@ -126,7 +132,9 @@ impl CvdPocStrategy {
             // Tighten SL to previous candle's POC
             if let Some(prev_poc) = prev_candle.poc {
                 position.update_stop_loss(prev_poc);
-                self.state.set_position(symbol.to_string(), position).await;
+                self.state
+                    .set_position(symbol.to_string(), position.clone())
+                    .await;
             }
 
             return None;
@@ -146,14 +154,13 @@ impl CvdPocStrategy {
 
             // Increment flip streak
             position.increment_flip_streak();
-            self.state.set_position(symbol.to_string(), position).await;
+            self.state
+                .set_position(symbol.to_string(), position.clone())
+                .await;
 
             // Rule 3: Two consecutive CVD flips
             if position.flip_streak >= 2 {
-                warn!(
-                    "Two consecutive CVD flips for {}: closing position",
-                    symbol
-                );
+                warn!("Two consecutive CVD flips for {}: closing position", symbol);
                 return Some(ExitReason::CvdFlip);
             }
 
@@ -205,17 +212,7 @@ mod tests {
     #[tokio::test]
     async fn test_strategy_process_candle() {
         let state = GlobalState::new();
-        let mut strategy = CvdPocStrategy::new(
-            state,
-            20,
-            0.70,
-            0.90,
-            2,
-            1.5,
-            0.001,
-            1.0,
-            1000.0,
-        );
+        let mut strategy = CvdPocStrategy::new(state, 20, 0.70, 0.90, 2, 1.5, 0.001, 1.0, 1000.0);
 
         let mut candle = Candle::new("BTC".to_string(), Utc::now());
         candle.open = 50000.0;
@@ -245,17 +242,8 @@ mod tests {
     #[tokio::test]
     async fn test_strategy_check_exit() {
         let state = GlobalState::new();
-        let strategy = CvdPocStrategy::new(
-            state.clone(),
-            20,
-            0.70,
-            0.90,
-            2,
-            1.5,
-            0.001,
-            1.0,
-            1000.0,
-        );
+        let strategy =
+            CvdPocStrategy::new(state.clone(), 20, 0.70, 0.90, 2, 1.5, 0.001, 1.0, 1000.0);
 
         // Create a position
         let position = Position::new(

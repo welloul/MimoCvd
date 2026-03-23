@@ -27,7 +27,9 @@ impl CandleBuilder {
     /// Process a trade and potentially emit a completed candle
     pub async fn process_trade(&mut self, trade: &Trade) -> Option<Candle> {
         let symbol = trade.symbol.clone();
-        let candle_timestamp = trade.timestamp.duration_trunc(chrono::Duration::minutes(1))
+        let candle_timestamp = trade
+            .timestamp
+            .duration_trunc(chrono::Duration::minutes(1))
             .expect("Failed to truncate timestamp");
 
         // Check if we need to start a new candle
@@ -58,7 +60,9 @@ impl CandleBuilder {
                 }
 
                 // Store in global state
-                self.state.add_candle(symbol.clone(), completed_candle).await;
+                self.state
+                    .add_candle(symbol.clone(), completed_candle.clone())
+                    .await;
 
                 return Some(completed_candle);
             }
@@ -74,7 +78,9 @@ impl CandleBuilder {
             candle.add_trade(trade);
 
             // Update global CVD
-            self.state.update_global_cvd(symbol.clone(), trade.delta()).await;
+            self.state
+                .update_global_cvd(symbol.clone(), trade.delta())
+                .await;
         }
 
         None
@@ -102,9 +108,11 @@ impl CandleBuilder {
     pub async fn finalize_all(&mut self) -> Vec<Candle> {
         let mut completed = Vec::new();
 
-        for (_, candle) in self.current_candles.drain() {
-            let candle = self.finalize_candle(candle).await;
-            completed.push(candle);
+        let candles: Vec<Candle> = self.current_candles.drain().map(|(_, c)| c).collect();
+
+        for candle in candles {
+            let finalized = self.finalize_candle(candle).await;
+            completed.push(finalized);
         }
 
         completed
@@ -125,8 +133,20 @@ mod tests {
         let timestamp = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
 
         // Add trades to same candle
-        let trade1 = Trade::new("BTC".to_string(), 50000.0, 1.0, cvdtrader_core::Side::Buy, timestamp);
-        let trade2 = Trade::new("BTC".to_string(), 50100.0, 0.5, cvdtrader_core::Side::Sell, timestamp);
+        let trade1 = Trade::new(
+            "BTC".to_string(),
+            50000.0,
+            1.0,
+            cvdtrader_core::Side::Buy,
+            timestamp,
+        );
+        let trade2 = Trade::new(
+            "BTC".to_string(),
+            50100.0,
+            0.5,
+            cvdtrader_core::Side::Sell,
+            timestamp,
+        );
 
         assert!(builder.process_trade(&trade1).await.is_none());
         assert!(builder.process_trade(&trade2).await.is_none());
@@ -154,11 +174,23 @@ mod tests {
         let timestamp2 = Utc.with_ymd_and_hms(2024, 1, 1, 0, 1, 0).unwrap();
 
         // First candle
-        let trade1 = Trade::new("BTC".to_string(), 50000.0, 1.0, cvdtrader_core::Side::Buy, timestamp1);
+        let trade1 = Trade::new(
+            "BTC".to_string(),
+            50000.0,
+            1.0,
+            cvdtrader_core::Side::Buy,
+            timestamp1,
+        );
         assert!(builder.process_trade(&trade1).await.is_none());
 
         // Second candle (should emit first candle)
-        let trade2 = Trade::new("BTC".to_string(), 50100.0, 0.5, cvdtrader_core::Side::Sell, timestamp2);
+        let trade2 = Trade::new(
+            "BTC".to_string(),
+            50100.0,
+            0.5,
+            cvdtrader_core::Side::Sell,
+            timestamp2,
+        );
         let completed = builder.process_trade(&trade2).await;
         assert!(completed.is_some());
 
@@ -184,8 +216,20 @@ mod tests {
         let timestamp = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
 
         // Add trades
-        let trade1 = Trade::new("BTC".to_string(), 50000.0, 1.0, cvdtrader_core::Side::Buy, timestamp);
-        let trade2 = Trade::new("ETH".to_string(), 3000.0, 10.0, cvdtrader_core::Side::Sell, timestamp);
+        let trade1 = Trade::new(
+            "BTC".to_string(),
+            50000.0,
+            1.0,
+            cvdtrader_core::Side::Buy,
+            timestamp,
+        );
+        let trade2 = Trade::new(
+            "ETH".to_string(),
+            3000.0,
+            10.0,
+            cvdtrader_core::Side::Sell,
+            timestamp,
+        );
 
         builder.process_trade(&trade1).await;
         builder.process_trade(&trade2).await;
