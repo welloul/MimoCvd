@@ -1,0 +1,56 @@
+[workspace]
+members = [
+    "cvdtrader-core",
+    "cvdtrader-market-data",
+    "cvdtrader-strategy",
+    "cvdtrader-execution",
+    "cvdtrader-risk",
+    "cvdtrader-bot",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Low-latency Rust trading bot for Hyperliquid"
+
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+tokio-util = "0.7"
+
+# WebSocket
+tokio-tungstenite = "0.20"
+futures-util = "0.3"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+
+# Error handling
+thiserror = "1"
+anyhow = "1"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
+
+# HTTP client
+reqwest = { version = "0.11", features = ["json", "rustls-tls"] }
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Math
+statrs = "0.16"
+
+# UUID for order IDs
+uuid = { version = "1", features = ["v4", "serde"] }
+
+# Testing
+[workspace.dev-dependencies]
+tokio-test = "0.4"
+proptest = "1"
+criterion = { version = "0.5", features = ["html_reports"] }

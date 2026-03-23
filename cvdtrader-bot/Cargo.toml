@@ -1,0 +1,25 @@
+[package]
+name = "cvdtrader-bot"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description.workspace = true
+
+[[bin]]
+name = "cvdtrader"
+path = "src/main.rs"
+
+[dependencies]
+cvdtrader-core = { path = "../cvdtrader-core" }
+cvdtrader-market-data = { path = "../cvdtrader-market-data" }
+cvdtrader-strategy = { path = "../cvdtrader-strategy" }
+cvdtrader-execution = { path = "../cvdtrader-execution" }
+cvdtrader-risk = { path = "../cvdtrader-risk" }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+chrono = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

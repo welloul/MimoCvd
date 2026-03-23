@@ -1,0 +1,33 @@
+# CVDTrader Configuration
+# Low-latency Rust trading bot for Hyperliquid
+
+[exchange]
+name = "hyperliquid"
+ws_url = "wss://api.hyperliquid.xyz/ws"
+api_url = "https://api.hyperliquid.xyz"
+symbols = ["BTC", "ETH", "SOL"]
+
+[strategy]
+name = "cvd_poc"
+lookback = 20
+cvd_exhaustion_ratio = 0.70
+cvd_absorption_pctile = 0.90
+sl_offset = 2
+risk_r_multiple = 1.5
+entry_offset_pct = 0.001  # 0.1%
+
+[risk]
+max_position_usd = 1000.0
+max_leverage = 10.0
+max_drawdown_pct = 0.05  # 5%
+circuit_breaker_latency_ms = 500
+circuit_breaker_failures = 3
+
+[execution]
+mode = "dryrun"  # dryrun, testnet, live
+ttl_seconds = 120
+post_only = true
+
+[logging]
+level = "info"  # trace, debug, info, warn, error
+format = "json"  # json, pretty

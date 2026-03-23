@@ -1,0 +1,14 @@
+[package]
+name = "cvdtrader-strategy"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description.workspace = true
+
+[dependencies]
+cvdtrader-core = { path = "../cvdtrader-core" }
+cvdtrader-market-data = { path = "../cvdtrader-market-data" }
+tokio = { workspace = true }
+chrono = { workspace = true }
+tracing = { workspace = true }
+anyhow = { workspace = true }
