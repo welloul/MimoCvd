@@ -20,6 +20,48 @@
 ### Fixed
 - N/A (initial release)
 
+## [Session: March 24, 2026]
+### Added
+- **Trade History Persistence**: SQLite-based trade recording system
+  - TradeRecord struct for completed trades (entry/exit times, PnL, exit reason)
+  - TradeHistory module with database operations (record, query, statistics)
+  - Automatic trade recording when positions close
+  - Trade statistics calculation (win rate, profit factor, max win/loss)
+- **Health Check Endpoint**: HTTP endpoint for monitoring bot status
+  - /health endpoint with connection status, last message timestamp
+  - Active positions count, pending orders count
+  - WebSocket connection status
+- **Execution Error Types**: Specific error types for execution operations
+  - Network, Validation, Exchange, Timeout, RateLimited errors
+  - Retryable vs non-retryable error classification
+  - Retry delay recommendations
+- **Configurable Parameters**:
+  - Account balance for risk calculations (configurable in dryrun mode)
+  - Channel buffer sizes (trade_buffer_size, candle_buffer_size)
+  - TTL check interval (ttl_check_interval_secs)
+  - Health check port configuration
+- **Integration Tests**: Comprehensive test suite for bot lifecycle
+  - Bot startup/shutdown tests
+  - Global state operations tests
+  - Concurrent access tests
+  - Configuration validation tests
+- **Failure Mode Tests**: Tests for production failure scenarios
+  - Circuit breaker trip scenarios
+  - Order TTL expiration
+  - Risk manager validation edge cases
+  - Concurrent state access under load
+
+### Changed
+- **RiskManager**: Now accepts account_balance and execution_mode parameters
+- **Bot::new()**: Now returns Result<Self> to handle TradeHistory initialization
+- **Orchestrator**: Integrated trade recording when positions close
+- **WebSocket**: Added jitter to exponential backoff for reconnection
+- **CvdPocStrategy**: Updated to use per-symbol tick sizes from exchange metadata
+
+### Fixed
+- **Unused Imports**: Cleaned up unused imports in cvd_poc.rs (Side, Signal, DateTime)
+- **Test Fixtures**: Updated tests to use correct function signatures
+
 ## Version History
 This is the initial release of the CVDTrader project. All features listed above are part of the initial implementation.
 

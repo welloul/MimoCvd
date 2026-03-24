@@ -34,39 +34,63 @@
    - Status: Open
    - Assigned: None
 
-6. **Risk Manager Account Balance**
-   - Description: Uses hardcoded 10000.0 balance rather than configurable value
-   - Impact: Medium - inaccurate leverage calculations
-   - Status: Open
-   - Assigned: None
-
 ### Low Priority
-7. **Error Type Specificity**
-   - Description: Many functions return generic anyhow::Error instead of specific error types
-   - Impact: Low - makes error handling less precise
-   - Status: Open
+6. **Unused Imports**
+   - Description: Some modules have unused imports (e.g., cvd_poc.rs had Side, Signal, DateTime)
+   - Impact: Low - cosmetic issue, doesn't affect functionality
+   - Status: Closed (cleaned up in latest commit)
    - Assigned: None
-
-8. **Channel Buffer Sizing**
-   - Description: Fixed channel sizes (1000 trades, 100 candles) may not suit all workloads
-   - Impact: Low - could cause backpressure or underutilization
-   - Status: Open
-   - Assigned: None
-
-9. **TTL Checker Granularity**
-   - Description: Checks for expired orders every 10 seconds (could be more frequent)
-   - Impact: Low - orders may stay open up to 10 seconds past TTL
-   - Status: Open
-   - Assigned: None
-
-10. **Hardcoded Tick Sizes**
-    - Description: Some modules use hardcoded tick sizes rather than config-derived values
-    - Impact: Low - affects precision for different instruments
-    - Status: Open
-    - Assigned: None
 
 ## Closed Issues
-*(This section will be populated as issues are resolved)*
+
+### Resolved in Session: March 24, 2026
+1. **Risk Manager Account Balance** ✅
+   - Description: Uses hardcoded 10000.0 balance rather than configurable value
+   - Impact: Medium - inaccurate leverage calculations
+   - Resolution: Added account_balance to RiskConfig, hybrid approach (config for dryrun, API for live)
+   - Closed: March 24, 2026
+
+2. **Error Type Specificity** ✅
+   - Description: Many functions return generic anyhow::Error instead of specific error types
+   - Impact: Low - makes error handling less precise
+   - Resolution: Created ExecutionError enum with specific error types (Network, Validation, Exchange, Timeout, RateLimited, etc.)
+   - Closed: March 24, 2026
+
+3. **Channel Buffer Sizing** ✅
+   - Description: Fixed channel sizes (1000 trades, 100 candles) may not suit all workloads
+   - Impact: Low - could cause backpressure or underutilization
+   - Resolution: Added trade_buffer_size and candle_buffer_size to BotConfig
+   - Closed: March 24, 2026
+
+4. **TTL Checker Granularity** ✅
+   - Description: Checks for expired orders every 10 seconds (could be more frequent)
+   - Impact: Low - orders may stay open up to 10 seconds past TTL
+   - Resolution: Added ttl_check_interval_secs to ExecutionConfig
+   - Closed: March 24, 2026
+
+5. **Hardcoded Tick Sizes** ✅
+   - Description: Some modules use hardcoded tick sizes rather than config-derived values
+   - Impact: Low - affects precision for different instruments
+   - Resolution: Fetch tick sizes from exchange metadata on startup, pass to strategy
+   - Closed: March 24, 2026
+
+6. **Unused Imports** ✅
+   - Description: cvd_poc.rs had unused imports (Side, Signal, DateTime)
+   - Impact: Low - cosmetic issue
+   - Resolution: Removed unused imports, kept only what's needed
+   - Closed: March 24, 2026
+
+7. **Trade History Persistence** ✅
+   - Description: No mechanism to record completed trades for analysis
+   - Impact: Medium - unable to track performance over time
+   - Resolution: Added TradeHistory module with SQLite database (trades.db)
+   - Closed: March 24, 2026
+
+8. **Health Check Endpoint** ✅
+   - Description: No way to monitor bot status externally
+   - Impact: Low - operational visibility
+   - Resolution: Added HealthServer with /health endpoint (configurable port)
+   - Closed: March 24, 2026
 
 ## Bug Reporting Template
 When reporting issues, please include:

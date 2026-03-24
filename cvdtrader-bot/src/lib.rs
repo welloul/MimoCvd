@@ -3,9 +3,11 @@
 //! This crate provides the main bot orchestrator for the CVDTrader
 //! low-latency trading bot.
 
+pub mod health;
 pub mod orchestrator;
 
 // Re-export commonly used types
+pub use health::HealthServer;
 pub use orchestrator::Bot;
 
 /// Result type for bot operations

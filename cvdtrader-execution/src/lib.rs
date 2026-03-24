@@ -3,11 +3,13 @@
 //! This crate provides order execution, TTL tracking, and fill confirmation
 //! for the CVDTrader low-latency trading bot.
 
+pub mod errors;
 pub mod fills;
 pub mod gateway;
 pub mod ttl;
 
 // Re-export commonly used types
+pub use errors::ExecutionError;
 pub use fills::FillTracker;
 pub use gateway::ExecutionGateway;
 pub use ttl::OrderTtlTracker;

@@ -1,22 +1,14 @@
 use anyhow::{Context, Result};
 use cvdtrader_core::{Side, Trade};
 use futures_util::{SinkExt, StreamExt};
+use hyperliquid_rust_sdk::InfoClient;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, RwLock};
 use tokio::time::{sleep, Duration};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
-use tracing::{error, info, warn};
-
-/// WebSocket message types from Hyperliquid
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "channel")]
-pub enum WsMessage {
-    #[serde(rename = "trades")]
-    Trades { data: Vec<TradeData> },
-    #[serde(rename = "error")]
-    Error { data: ErrorData },
-}
+use tracing::{debug, error, info, warn};
 
 /// Trade data from WebSocket
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -26,12 +18,6 @@ pub struct TradeData {
     pub px: String,
     pub sz: String,
     pub time: u64,
-}
-
-/// Error data from WebSocket
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ErrorData {
-    pub msg: String,
 }
 
 /// Subscription message
@@ -48,28 +34,96 @@ struct Subscription {
     coin: String,
 }
 
+/// Metadata for a trading pair
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SymbolMetadata {
+    pub name: String,
+    pub sz_decimals: i32,
+    pub px_decimals: i32,
+    pub max_leverage: f64,
+    pub only_isolated: bool,
+}
+
+/// Hyperliquid metadata response
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MetadataResponse {
+    pub universe: Vec<SymbolMetadata>,
+}
+
 /// Hyperliquid WebSocket client
 pub struct HyperliquidWs {
     url: String,
+    api_url: String,
     symbols: Vec<String>,
     trade_tx: mpsc::Sender<Trade>,
     shutdown_tx: broadcast::Sender<()>,
+    tick_sizes: Arc<RwLock<HashMap<String, f64>>>,
+    subscribed_symbols: Arc<RwLock<HashMap<String, bool>>>,
 }
 
 impl HyperliquidWs {
     /// Create a new WebSocket client
     pub fn new(
         url: String,
+        api_url: String,
         symbols: Vec<String>,
         trade_tx: mpsc::Sender<Trade>,
         shutdown_tx: broadcast::Sender<()>,
     ) -> Self {
         Self {
             url,
+            api_url,
             symbols,
             trade_tx,
             shutdown_tx,
+            tick_sizes: Arc::new(RwLock::new(HashMap::new())),
+            subscribed_symbols: Arc::new(RwLock::new(HashMap::new())),
         }
+    }
+
+    /// Fetch metadata from exchange API using SDK
+    pub async fn fetch_metadata(&self) -> Result<HashMap<String, f64>> {
+        // Create InfoClient for metadata fetching
+        let info_client = InfoClient::new(None, None)
+            .await
+            .context("Failed to create InfoClient")?;
+
+        // Fetch metadata using SDK
+        let metadata = info_client
+            .meta()
+            .await
+            .context("Failed to fetch metadata from exchange")?;
+
+        let mut tick_sizes = HashMap::new();
+
+        for asset_meta in metadata.universe {
+            // Calculate tick size from sz_decimals
+            // sz_decimals = 0 -> tick_size = 1
+            // sz_decimals = 1 -> tick_size = 0.1
+            // sz_decimals = 2 -> tick_size = 0.01
+            let tick_size = 10f64.powi(-(asset_meta.sz_decimals as i32));
+            tick_sizes.insert(asset_meta.name.clone(), tick_size);
+
+            info!(
+                "Loaded metadata for {}: tick_size={}, sz_decimals={}",
+                asset_meta.name, tick_size, asset_meta.sz_decimals
+            );
+        }
+
+        // Update internal tick sizes
+        *self.tick_sizes.write().await = tick_sizes.clone();
+
+        Ok(tick_sizes)
+    }
+
+    /// Get tick size for a symbol
+    pub async fn get_tick_size(&self, symbol: &str) -> Option<f64> {
+        self.tick_sizes.read().await.get(symbol).copied()
+    }
+
+    /// Get all tick sizes
+    pub async fn get_all_tick_sizes(&self) -> HashMap<String, f64> {
+        self.tick_sizes.read().await.clone()
     }
 
     /// Start the WebSocket connection
@@ -84,8 +138,18 @@ impl HyperliquidWs {
 
         let (mut write, mut read) = ws_stream.split();
 
-        // Subscribe to trade data for all symbols
-        for symbol in &self.symbols {
+        // Get symbols that need subscription (not already subscribed)
+        let subscribed = self.subscribed_symbols.read().await;
+        let symbols_to_subscribe: Vec<String> = self
+            .symbols
+            .iter()
+            .filter(|symbol| !subscribed.contains_key(*symbol))
+            .cloned()
+            .collect();
+        drop(subscribed);
+
+        // Subscribe to trade data for symbols that need subscription
+        for symbol in &symbols_to_subscribe {
             let subscription = SubscriptionMessage {
                 method: "subscribe".to_string(),
                 subscription: Subscription {
@@ -102,7 +166,17 @@ impl HyperliquidWs {
                 .await
                 .context("Failed to send subscription message")?;
 
+            // Mark as subscribed
+            self.subscribed_symbols
+                .write()
+                .await
+                .insert(symbol.clone(), true);
+
             info!("Subscribed to trades for {}", symbol);
+        }
+
+        if symbols_to_subscribe.is_empty() {
+            info!("All symbols already subscribed, skipping subscription");
         }
 
         // Spawn task to handle incoming messages
@@ -147,21 +221,72 @@ impl HyperliquidWs {
 
     /// Handle incoming WebSocket message
     async fn handle_message(text: &str, trade_tx: &mpsc::Sender<Trade>) -> Result<()> {
-        let msg: WsMessage = serde_json::from_str(text).context("Failed to parse WebSocket message")?;
+        // Ignore pong messages (not JSON)
+        if text.contains("pong") {
+            return Ok(());
+        }
 
-        match msg {
-            WsMessage::Trades { data } => {
-                for trade_data in data {
-                    let trade = Self::parse_trade(trade_data)?;
-                    if let Err(e) = trade_tx.send(trade).await {
-                        error!("Failed to send trade: {}", e);
+        // Log all incoming messages for debugging
+        if text.len() < 500 {
+            debug!("Received WebSocket message: {}", text);
+        } else {
+            debug!(
+                "Received WebSocket message (truncated): {}...",
+                &text[..500]
+            );
+        }
+
+        // Parse as generic JSON Value to handle Hyperliquid's actual message format
+        let data: serde_json::Value = match serde_json::from_str(text) {
+            Ok(v) => v,
+            Err(e) => {
+                debug!("Failed to parse JSON: {}", e);
+                return Ok(());
+            }
+        };
+
+        // Extract channel and data from the message
+        // Hyperliquid sends: { "channel": "trades", "data": [...] }
+        if let (Some(channel), Some(trades_data)) = (
+            data.get("channel").and_then(|c| c.as_str()),
+            data.get("data").and_then(|d| d.as_array()),
+        ) {
+            debug!(
+                "Received message on channel: {} with {} items",
+                channel,
+                trades_data.len()
+            );
+
+            if channel == "trades" {
+                for trade_value in trades_data {
+                    // Parse each trade from the JSON value
+                    if let Ok(trade_data) = serde_json::from_value::<TradeData>(trade_value.clone())
+                    {
+                        match Self::parse_trade(trade_data) {
+                            Ok(trade) => {
+                                debug!(
+                                    "Parsed trade: {} {} @ {} size {}",
+                                    trade.symbol, trade.side, trade.price, trade.size
+                                );
+                                if let Err(e) = trade_tx.send(trade).await {
+                                    error!("Failed to send trade: {}", e);
+                                }
+                            }
+                            Err(e) => {
+                                error!("Failed to parse trade: {}", e);
+                            }
+                        }
                     }
                 }
+            } else if channel == "error" {
+                if let Some(error_msg) = data.get("data").and_then(|d| d.get("msg")) {
+                    error!("WebSocket error: {}", error_msg);
+                }
             }
-            WsMessage::Error { data } => {
-                error!("WebSocket error: {}", data.msg);
-            }
+        } else {
+            debug!("Message does not have channel/data structure: {:?}", data);
         }
+        // Ignore other message types (subscription confirmations, etc.)
 
         Ok(())
     }
@@ -206,7 +331,12 @@ impl HyperliquidWs {
                         return Err(e);
                     }
 
-                    let delay = base_delay * 2u32.pow(retry_count - 1);
+                    // Calculate exponential backoff with jitter (0-50% of delay)
+                    let base_delay_secs = base_delay.as_secs() * 2u64.pow(retry_count - 1);
+                    // Simple jitter: use retry_count as a pseudo-random value
+                    let jitter = (retry_count as u64 * 13) % (base_delay_secs / 2 + 1);
+                    let delay = Duration::from_secs(base_delay_secs + jitter);
+
                     warn!(
                         "WebSocket connection failed (retry {}/{}): {}. Retrying in {:?}",
                         retry_count, max_retries, e, delay

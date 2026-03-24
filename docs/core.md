@@ -16,6 +16,17 @@ Represents a single trade from the exchange with:
 - Timestamp
 - Delta calculation (positive for buy, negative for sell)
 
+#### TradeRecord
+Represents a completed trade with entry and exit details:
+- Unique ID (UUID)
+- Symbol and side (Long/Short)
+- Size, entry price, exit price
+- Entry time and exit time
+- Realized PnL and PnL percentage
+- Exit reason (StopLoss, TakeProfit, CvdFlip, Manual)
+- Setup type (Exhaustion, Absorption)
+- Methods for duration calculation and profitability check
+
 #### Candle
 OHLCV data with additional CVD and POC fields:
 - Open, High, Low, Close prices
@@ -99,7 +110,7 @@ Consistent error handling throughout:
 4. **UUID Generation**: Position/Order IDs use UUIDv4 - acceptable but could be optimized for performance
 
 ### Technical Debt
-1. **Tick Size Hardcoding**: In Config.tick_size(), values are hardcoded rather than fetched from exchange
+1. **Tick Size Resolution**: Tick sizes are now fetched from exchange metadata on startup (via WebSocket.fetch_metadata())
 2. **Validation Error Messages**: Could be more specific about which validation failed
 3. **Default Values**: Some defaults may not be optimal for all trading pairs/scenarios
 

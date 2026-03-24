@@ -44,9 +44,10 @@ Main strategy orchestrator that combines all components:
 - **Components**:
   - SignalEvaluator: Core signal generation logic
   - GlobalState: Access to position/order/candle data
-  - VolumeProfileBuilder: POC calculation for candles
+  - VolumeProfileBuilders: Per-symbol POC calculation for candles (HashMap<String, VolumeProfileBuilder>)
   - IndicatorCompute: CVD/RVOL/historical indicators
   - max_position_usd: Position sizing limit
+  - tick_sizes: Per-symbol tick sizes from exchange metadata (HashMap<String, f64>)
 
 #### Main Processing Flow
 1. **process_candle**:
@@ -87,7 +88,7 @@ Main strategy orchestrator that combines all components:
 
 ### Technical Debt
 1. **Incomplete TODOs**: Multiple TODO comments indicating incomplete integrations
-2. **Magic Numbers**: Some hardcoded values that should be configurable (tick size, position sizing)
+2. **Magic Numbers**: Some hardcoded values that should be configurable (tick size now fetched from exchange, position sizing from config)
 3. **Error Handling**: Limited error propagation - assumes operations succeed
 4. **Code Duplication**: Some logic duplicated between evaluate_signal and manage_position_exit
 5. **State Coupling**: Direct access to GlobalState creates tight coupling between strategy and state layers
@@ -102,7 +103,7 @@ Main strategy orchestrator that combines all components:
 ### Immediate Improvements
 1. Implement proper history passing from GlobalState to SignalEvaluator
 2. Integrate actual VWAP tracker for signal validation
-3. Replace hardcoded tick size and position sizing with config-derived values
+3. Hardcoded tick size replaced with exchange metadata; position sizing from config
 4. Remove TODO comments and complete incomplete integrations
 5. Add more specific error types for strategy validation failures
 

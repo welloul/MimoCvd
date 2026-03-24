@@ -1,9 +1,14 @@
+use crate::health::HealthServer;
 use anyhow::{Context, Result};
-use cvdtrader_core::{Config, GlobalState, Trade};
+use cvdtrader_core::{Config, ExitReason, GlobalState, Trade, TradeHistory, TradeRecord};
 use cvdtrader_execution::{ExecutionGateway, FillTracker, OrderTtlTracker};
 use cvdtrader_market_data::{CandleBuilder, HyperliquidWs};
 use cvdtrader_risk::{CircuitBreaker, RiskManager};
 use cvdtrader_strategy::CvdPocStrategy;
+use serde_json::json;
+use std::fs::OpenOptions;
+use std::io::Write;
+use std::path::Path;
 use tokio::signal;
 use tokio::sync::{broadcast, mpsc};
 use tracing::{error, info, warn};
@@ -14,21 +19,29 @@ pub struct Bot {
     config: Config,
     /// Global state
     state: GlobalState,
+    /// Trade history
+    trade_history: TradeHistory,
     /// Shutdown signal
     shutdown_tx: broadcast::Sender<()>,
 }
 
 impl Bot {
     /// Create a new bot
-    pub fn new(config: Config) -> Self {
+    pub fn new(config: Config) -> Result<Self> {
         let (shutdown_tx, _) = broadcast::channel(1);
         let state = GlobalState::new();
 
-        Self {
+        // Initialize trade history database
+        let db_path = Path::new("trades.db");
+        let trade_history =
+            TradeHistory::new(db_path).context("Failed to initialize trade history database")?;
+
+        Ok(Self {
             config,
             state,
+            trade_history,
             shutdown_tx,
-        }
+        })
     }
 
     /// Start the bot
@@ -40,30 +53,19 @@ impl Bot {
         self.init_logging()?;
 
         // Create channels
-        let (trade_tx, trade_rx) = mpsc::channel(1000);
-        let (candle_tx, candle_rx) = mpsc::channel(100);
+        let (trade_tx, trade_rx) = mpsc::channel(self.config.bot.trade_buffer_size);
+        let (candle_tx, candle_rx) = mpsc::channel(self.config.bot.candle_buffer_size);
 
         // Initialize components
         let ws = HyperliquidWs::new(
             self.config.exchange.ws_url.clone(),
+            self.config.exchange.api_url.clone(),
             self.config.exchange.symbols.clone(),
             trade_tx,
             self.shutdown_tx.clone(),
         );
 
         let mut candle_builder = CandleBuilder::new(candle_tx, self.state.clone());
-
-        let mut strategy = CvdPocStrategy::new(
-            self.state.clone(),
-            self.config.strategy.lookback,
-            self.config.strategy.cvd_exhaustion_ratio,
-            self.config.strategy.cvd_absorption_pctile,
-            self.config.strategy.sl_offset,
-            self.config.strategy.risk_r_multiple,
-            self.config.strategy.entry_offset_pct,
-            self.config.tick_size(&self.config.exchange.symbols[0]),
-            self.config.risk.max_position_usd,
-        );
 
         let gateway = ExecutionGateway::new(
             self.config.exchange.api_url.clone(),
@@ -77,6 +79,7 @@ impl Bot {
         let ttl_tracker = OrderTtlTracker::new(
             self.state.clone(),
             self.config.execution.ttl_seconds,
+            self.config.execution.ttl_check_interval_secs,
             self.shutdown_tx.clone(),
         );
 
@@ -85,13 +88,35 @@ impl Bot {
             self.config.risk.max_position_usd,
             self.config.risk.max_leverage,
             self.config.risk.max_drawdown_pct,
-            10000.0, // TODO: Get from config
+            self.config.risk.account_balance,
+            self.config.execution.mode,
         );
 
         let circuit_breaker = CircuitBreaker::new(
             self.config.risk.circuit_breaker_latency_ms,
             self.config.risk.circuit_breaker_failures,
             self.shutdown_tx.clone(),
+        );
+
+        // Fetch metadata from exchange
+        info!("Fetching metadata from exchange");
+        let tick_sizes = ws.fetch_metadata().await?;
+        info!("Loaded tick sizes for {} symbols", tick_sizes.len());
+
+        // Set tick sizes for POC calculation
+        candle_builder.set_tick_sizes(&tick_sizes);
+
+        // Create strategy with tick sizes from exchange
+        let mut strategy = CvdPocStrategy::new(
+            self.state.clone(),
+            self.config.strategy.lookback,
+            self.config.strategy.cvd_exhaustion_ratio,
+            self.config.strategy.cvd_absorption_pctile,
+            self.config.strategy.sl_offset,
+            self.config.strategy.risk_r_multiple,
+            self.config.strategy.entry_offset_pct,
+            tick_sizes,
+            self.config.risk.max_position_usd,
         );
 
         // Start components
@@ -105,6 +130,14 @@ impl Bot {
         let fill_tracker_handle = tokio::spawn(async move {
             fill_tracker.start().await;
         });
+
+        // Start health check server
+        let health_server = HealthServer::new(
+            self.config.bot.health_check_port,
+            self.state.clone(),
+            self.shutdown_tx.clone(),
+        );
+        health_server.start().await?;
 
         // Set bot as running
         self.state.set_running(true).await;
@@ -178,11 +211,33 @@ impl Bot {
                         // Check exit conditions for existing positions
                         if let Some(exit_reason) = strategy.check_exit(&completed_candle.symbol, completed_candle.close).await {
                             info!("Exit signal for {}: {:?}", completed_candle.symbol, exit_reason);
-                            if let Err(e) = gateway.close_position(&completed_candle.symbol).await {
-                                error!("Failed to close position: {}", e);
-                                circuit_breaker.record_failure().await;
-                            } else {
-                                circuit_breaker.record_success().await;
+
+                            // Get position before closing for trade recording
+                            if let Some(position) = self.state.get_position(&completed_candle.symbol).await {
+                                let exit_price = completed_candle.close;
+
+                                // Close the position
+                                if let Err(e) = gateway.close_position(&completed_candle.symbol).await {
+                                    error!("Failed to close position: {}", e);
+                                    circuit_breaker.record_failure().await;
+                                } else {
+                                    // Record the completed trade
+                                    let trade_record = TradeRecord::new(&position, exit_price, exit_reason);
+                                    if let Err(e) = self.trade_history.record_trade(&trade_record) {
+                                        error!("Failed to record trade: {}", e);
+                                    } else {
+                                        info!(
+                                            "Trade recorded: {} {} @ {} -> {} (PnL: {:.2}, {:.2}%)",
+                                            trade_record.symbol,
+                                            trade_record.side,
+                                            trade_record.entry_price,
+                                            trade_record.exit_price,
+                                            trade_record.pnl,
+                                            trade_record.pnl_pct
+                                        );
+                                    }
+                                    circuit_breaker.record_success().await;
+                                }
                             }
                         }
                     }
@@ -194,8 +249,21 @@ impl Bot {
 
                 // Process completed candles
                 Some(candle) = candle_rx.recv() => {
-                    // Update indicators
-                    // TODO: Update indicators with completed candle
+                    // Export candle to JSON file
+                    self.export_candle_to_json(&candle);
+
+                    // Log candle completion with CVD and POC
+                    info!(
+                        "Candle completed: {} O={} H={} L={} C={} V={} CVD={} POC={:?}",
+                        candle.symbol,
+                        candle.open,
+                        candle.high,
+                        candle.low,
+                        candle.close,
+                        candle.volume,
+                        candle.cvd,
+                        candle.poc
+                    );
                 }
 
                 // Check for shutdown
@@ -259,16 +327,42 @@ impl Bot {
     pub fn config(&self) -> &Config {
         &self.config
     }
+
+    /// Export candle data to JSON file
+    fn export_candle_to_json(&self, candle: &cvdtrader_core::Candle) {
+        let candle_data = json!({
+            "symbol": candle.symbol,
+            "timestamp": candle.timestamp.to_rfc3339(),
+            "open": candle.open,
+            "high": candle.high,
+            "low": candle.low,
+            "close": candle.close,
+            "volume": candle.volume,
+            "cvd": candle.cvd,
+            "poc": candle.poc,
+            "trade_count": candle.trades.len()
+        });
+
+        let json_line = serde_json::to_string(&candle_data).unwrap_or_default();
+
+        if let Ok(mut file) = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open("candles.json")
+        {
+            let _ = writeln!(file, "{}", json_line);
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_bot_new() {
+    #[tokio::test]
+    async fn test_bot_new() {
         let config = Config::default();
-        let bot = Bot::new(config);
-        assert!(!bot.state().is_running().try_into().unwrap_or(false));
+        let bot = Bot::new(config).unwrap();
+        assert!(!bot.state().is_running().await);
     }
 }

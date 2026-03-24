@@ -17,7 +17,8 @@ The cvdtrader-risk module provides risk management and safety systems for the tr
   - Configurable limits for all risk parameters
   - Comprehensive logging of validation decisions
   - Returns detailed error messages for failed validations
-  - Account balance tracking for leverage calculations
+  - Account balance tracking for leverage calculations (configurable for dryrun, API for live)
+  - Execution mode awareness (DryRun/TestNet/Live)
 
 #### Validation Process
 1. Calculate position value (entry_price * size)
@@ -73,7 +74,7 @@ The cvdtrader-risk module provides risk management and safety systems for the tr
 5. **Risk Manager Coupling**: Tightly coupled to specific GlobalState access patterns
 
 ### Technical Debt
-1. **Hardcoded Account Balance**: RiskManager uses hardcoded 10000.0 balance rather than configurable value
+1. **Account Balance**: Now configurable via RiskConfig.account_balance (hybrid approach: config for dryrun, API for live)
 2. **Limited Risk Metrics**: Only basic position size, leverage, and drawdown - no VaR, stress testing, etc.
 3. **Circuit Breaker State**: Resetting state defined but not fully utilized in state transitions
 4. **Error Handling**: Risk validation returns String errors rather than specific error types
@@ -88,7 +89,7 @@ The cvdtrader-risk module provides risk management and safety systems for the tr
 
 ## Future Roadmap
 ### Immediate Improvements
-1. Make account balance configurable rather than hardcoded
+1. Account balance now configurable (RiskConfig.account_balance)
 2. Add more specific error types for risk validation failures
 3. Implement automatic circuit breaker reset after cooling period
 4. Enhance drawdown calculation to include realized PnL

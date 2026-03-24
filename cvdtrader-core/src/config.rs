@@ -57,6 +57,9 @@ pub struct RiskConfig {
     pub max_drawdown_pct: f64,
     pub circuit_breaker_latency_ms: u64,
     pub circuit_breaker_failures: u32,
+    /// Account balance for leverage calculations (used in dryrun mode)
+    /// In live/testnet mode, this is fetched from exchange API
+    pub account_balance: f64,
 }
 
 impl Default for RiskConfig {
@@ -67,6 +70,7 @@ impl Default for RiskConfig {
             max_drawdown_pct: 0.05, // 5%
             circuit_breaker_latency_ms: 500,
             circuit_breaker_failures: 3,
+            account_balance: 10000.0,
         }
     }
 }
@@ -77,6 +81,8 @@ pub struct ExecutionConfig {
     pub mode: ExecutionMode,
     pub ttl_seconds: i64,
     pub post_only: bool,
+    /// Interval in seconds for checking expired orders
+    pub ttl_check_interval_secs: u64,
 }
 
 impl Default for ExecutionConfig {
@@ -85,6 +91,28 @@ impl Default for ExecutionConfig {
             mode: ExecutionMode::DryRun,
             ttl_seconds: 120,
             post_only: true,
+            ttl_check_interval_secs: 10,
+        }
+    }
+}
+
+/// Bot configuration for orchestrator settings
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BotConfig {
+    /// Channel buffer size for trade messages
+    pub trade_buffer_size: usize,
+    /// Channel buffer size for candle messages
+    pub candle_buffer_size: usize,
+    /// Port for health check HTTP endpoint (0 to disable)
+    pub health_check_port: u16,
+}
+
+impl Default for BotConfig {
+    fn default() -> Self {
+        Self {
+            trade_buffer_size: 1000,
+            candle_buffer_size: 100,
+            health_check_port: 8080,
         }
     }
 }
@@ -112,6 +140,7 @@ pub struct Config {
     pub strategy: StrategyConfig,
     pub risk: RiskConfig,
     pub execution: ExecutionConfig,
+    pub bot: BotConfig,
     pub logging: LoggingConfig,
 }
 
@@ -122,6 +151,7 @@ impl Default for Config {
             strategy: StrategyConfig::default(),
             risk: RiskConfig::default(),
             execution: ExecutionConfig::default(),
+            bot: BotConfig::default(),
             logging: LoggingConfig::default(),
         }
     }
@@ -271,11 +301,18 @@ max_leverage = 10.0
 max_drawdown_pct = 0.05
 circuit_breaker_latency_ms = 500
 circuit_breaker_failures = 3
+account_balance = 10000.0
 
 [execution]
-mode = "dryrun"
+mode = "DryRun"
 ttl_seconds = 120
 post_only = true
+ttl_check_interval_secs = 10
+
+[bot]
+trade_buffer_size = 1000
+candle_buffer_size = 100
+health_check_port = 8080
 
 [logging]
 level = "info"

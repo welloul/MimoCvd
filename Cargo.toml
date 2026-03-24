@@ -49,6 +49,9 @@ statrs = "0.16"
 # UUID for order IDs
 uuid = { version = "1", features = ["v4", "serde"] }
 
+# Hyperliquid SDK
+hyperliquid_rust_sdk = "0.6"
+
 # Testing
 [workspace.dev-dependencies]
 tokio-test = "0.4"

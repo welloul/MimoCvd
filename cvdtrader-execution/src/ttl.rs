@@ -10,16 +10,24 @@ pub struct OrderTtlTracker {
     state: GlobalState,
     /// TTL in seconds
     ttl_seconds: i64,
+    /// Check interval in seconds
+    check_interval_secs: u64,
     /// Shutdown signal
     shutdown_tx: broadcast::Sender<()>,
 }
 
 impl OrderTtlTracker {
     /// Create a new order TTL tracker
-    pub fn new(state: GlobalState, ttl_seconds: i64, shutdown_tx: broadcast::Sender<()>) -> Self {
+    pub fn new(
+        state: GlobalState,
+        ttl_seconds: i64,
+        check_interval_secs: u64,
+        shutdown_tx: broadcast::Sender<()>,
+    ) -> Self {
         Self {
             state,
             ttl_seconds,
+            check_interval_secs,
             shutdown_tx,
         }
     }
@@ -28,10 +36,11 @@ impl OrderTtlTracker {
     pub async fn start(&self) {
         let state = self.state.clone();
         let ttl_seconds = self.ttl_seconds;
+        let check_interval_secs = self.check_interval_secs;
         let mut shutdown_rx = self.shutdown_tx.subscribe();
 
         tokio::spawn(async move {
-            let mut interval = interval(Duration::from_secs(10)); // Check every 10 seconds
+            let mut interval = interval(Duration::from_secs(check_interval_secs));
 
             loop {
                 tokio::select! {
@@ -57,11 +66,7 @@ impl OrderTtlTracker {
             if order.status == OrderStatus::Pending && order.is_expired(ttl_seconds) {
                 warn!(
                     "Order {} expired ({}s), cancelling: {} {} @ {}",
-                    order_id,
-                    ttl_seconds,
-                    order.side,
-                    order.symbol,
-                    order.price
+                    order_id, ttl_seconds, order.side, order.symbol, order.price
                 );
 
                 // Update order status to cancelled
@@ -90,7 +95,7 @@ mod tests {
     async fn test_ttl_tracker_no_expired_orders() {
         let state = GlobalState::new();
         let (shutdown_tx, _) = broadcast::channel(1);
-        let tracker = OrderTtlTracker::new(state.clone(), 120, shutdown_tx);
+        let tracker = OrderTtlTracker::new(state.clone(), 120, 10, shutdown_tx);
 
         // Add a recent order
         let order = Order::new("BTC".to_string(), OrderSide::Buy, 50000.0, 1.0);
@@ -109,7 +114,7 @@ mod tests {
     async fn test_ttl_tracker_expired_order() {
         let state = GlobalState::new();
         let (shutdown_tx, _) = broadcast::channel(1);
-        let tracker = OrderTtlTracker::new(state.clone(), 1, shutdown_tx);
+        let tracker = OrderTtlTracker::new(state.clone(), 1, 10, shutdown_tx);
 
         // Add an old order
         let mut order = Order::new("BTC".to_string(), OrderSide::Buy, 50000.0, 1.0);
@@ -123,6 +128,9 @@ mod tests {
         // Order should be cancelled
         let orders = state.get_all_orders().await;
         assert_eq!(orders.len(), 1);
-        assert_eq!(orders.values().next().unwrap().status, OrderStatus::Cancelled);
+        assert_eq!(
+            orders.values().next().unwrap().status,
+            OrderStatus::Cancelled
+        );
     }
 }

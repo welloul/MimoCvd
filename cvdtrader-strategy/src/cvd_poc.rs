@@ -1,8 +1,7 @@
-use chrono::{DateTime, Utc};
-use cvdtrader_core::{
-    Candle, ExitReason, GlobalState, Position, PositionSide, Side, Signal, Trade, TradeSignal,
-};
+use chrono::Utc;
+use cvdtrader_core::{Candle, ExitReason, GlobalState, Position, PositionSide, Trade, TradeSignal};
 use cvdtrader_market_data::{IndicatorCompute, VolumeProfileBuilder};
+use std::collections::HashMap;
 use tracing::{debug, info, warn};
 
 use crate::signals::{SignalEvaluator, SignalGenerator};
@@ -13,12 +12,14 @@ pub struct CvdPocStrategy {
     evaluator: SignalEvaluator,
     /// Global state
     state: GlobalState,
-    /// Volume profile builder
-    volume_profile: VolumeProfileBuilder,
+    /// Volume profile builders per symbol
+    volume_profiles: HashMap<String, VolumeProfileBuilder>,
     /// Indicator compute engine
     indicators: IndicatorCompute,
     /// Maximum position size in USD
     max_position_usd: f64,
+    /// Tick sizes per symbol
+    tick_sizes: HashMap<String, f64>,
 }
 
 impl CvdPocStrategy {
@@ -31,9 +32,15 @@ impl CvdPocStrategy {
         sl_offset: i32,
         risk_r_multiple: f64,
         entry_offset_pct: f64,
-        tick_size: f64,
+        tick_sizes: HashMap<String, f64>,
         max_position_usd: f64,
     ) -> Self {
+        // Create volume profile builders for each symbol
+        let mut volume_profiles = HashMap::new();
+        for (symbol, tick_size) in &tick_sizes {
+            volume_profiles.insert(symbol.clone(), VolumeProfileBuilder::new(*tick_size));
+        }
+
         Self {
             evaluator: SignalEvaluator::new(
                 lookback,
@@ -44,16 +51,31 @@ impl CvdPocStrategy {
                 entry_offset_pct,
             ),
             state,
-            volume_profile: VolumeProfileBuilder::new(tick_size),
+            volume_profiles,
             indicators: IndicatorCompute::new(100),
             max_position_usd,
+            tick_sizes,
         }
+    }
+
+    /// Get tick size for a symbol
+    pub fn get_tick_size(&self, symbol: &str) -> Option<f64> {
+        self.tick_sizes.get(symbol).copied()
+    }
+
+    /// Get all tick sizes
+    pub fn get_all_tick_sizes(&self) -> &HashMap<String, f64> {
+        &self.tick_sizes
     }
 
     /// Process a candle and generate signals
     pub async fn process_candle(&mut self, candle: &Candle) -> Option<TradeSignal> {
         // Calculate POC for the candle
-        let poc = self.volume_profile.process_candle(candle);
+        let poc = if let Some(vp) = self.volume_profiles.get_mut(&candle.symbol) {
+            vp.process_candle(candle)
+        } else {
+            None
+        };
 
         // Update indicators
         self.indicators.process_candle(candle);
@@ -88,13 +110,26 @@ impl CvdPocStrategy {
     pub async fn check_exit(&self, symbol: &str, current_price: f64) -> Option<ExitReason> {
         let position = self.state.get_position(symbol).await?;
 
-        // Get last candle for the symbol
-        let candles = self.state.get_last_candles(symbol, 1).await;
-        let candle = candles.first()?;
+        // Check stop loss
+        if position.is_sl_hit(current_price) {
+            return Some(ExitReason::StopLoss);
+        }
 
-        // Check exit conditions
-        self.evaluator
-            .check_exit(&position, candle, &self.indicators)
+        // Check take profit
+        if position.is_tp_hit(current_price) {
+            return Some(ExitReason::TakeProfit);
+        }
+
+        // Get last candle for the symbol for CVD flip check
+        let candles = self.state.get_last_candles(symbol, 1).await;
+        if let Some(candle) = candles.first() {
+            // Check CVD flip streak
+            if position.flip_streak >= 2 {
+                return Some(ExitReason::CvdFlip);
+            }
+        }
+
+        None
     }
 
     /// Manage position exit based on CVD behavior
@@ -193,12 +228,14 @@ impl CvdPocStrategy {
 
     /// Get volume profile for a symbol
     pub fn get_volume_profile(&self, symbol: &str) -> Option<&VolumeProfileBuilder> {
-        Some(&self.volume_profile)
+        self.volume_profiles.get(symbol)
     }
 
     /// Clear all strategy data
     pub fn clear(&mut self) {
-        self.volume_profile.clear_all();
+        for vp in self.volume_profiles.values_mut() {
+            vp.clear_all();
+        }
         self.indicators.clear_all();
     }
 }
@@ -212,7 +249,10 @@ mod tests {
     #[tokio::test]
     async fn test_strategy_process_candle() {
         let state = GlobalState::new();
-        let mut strategy = CvdPocStrategy::new(state, 20, 0.70, 0.90, 2, 1.5, 0.001, 1.0, 1000.0);
+        let mut tick_sizes = HashMap::new();
+        tick_sizes.insert("BTC".to_string(), 1.0);
+        let mut strategy =
+            CvdPocStrategy::new(state, 20, 0.70, 0.90, 2, 1.5, 0.001, tick_sizes, 1000.0);
 
         let mut candle = Candle::new("BTC".to_string(), Utc::now());
         candle.open = 50000.0;
@@ -242,8 +282,19 @@ mod tests {
     #[tokio::test]
     async fn test_strategy_check_exit() {
         let state = GlobalState::new();
-        let strategy =
-            CvdPocStrategy::new(state.clone(), 20, 0.70, 0.90, 2, 1.5, 0.001, 1.0, 1000.0);
+        let mut tick_sizes = HashMap::new();
+        tick_sizes.insert("BTC".to_string(), 1.0);
+        let strategy = CvdPocStrategy::new(
+            state.clone(),
+            20,
+            0.70,
+            0.90,
+            2,
+            1.5,
+            0.001,
+            tick_sizes,
+            1000.0,
+        );
 
         // Create a position
         let position = Position::new(
@@ -255,6 +306,16 @@ mod tests {
             52000.0,
         );
         state.set_position("BTC".to_string(), position).await;
+
+        // Add a candle to the state so check_exit can find it
+        let mut candle = Candle::new("BTC".to_string(), Utc::now());
+        candle.open = 50000.0;
+        candle.high = 51000.0;
+        candle.low = 49000.0;
+        candle.close = 50500.0;
+        candle.volume = 100.0;
+        candle.cvd = 50.0;
+        state.add_candle("BTC".to_string(), candle).await;
 
         // Check exit at stop loss
         let exit = strategy.check_exit("BTC", 48999.0).await;

@@ -66,11 +66,12 @@ CVDTrader follows a modular, layered architecture designed for low-latency tradi
 ## Component Boundaries
 
 ### cvdtrader-core
-- **Responsibility**: Shared types, state management, configuration
+- **Responsibility**: Shared types, state management, configuration, trade history
 - **Key Components**: 
-  - Types (Trade, Candle, Position, Order, etc.)
+  - Types (Trade, Candle, Position, Order, TradeRecord, etc.)
   - GlobalState (thread-safe shared state)
   - Config (TOML-based configuration)
+  - TradeHistory (SQLite-based trade persistence)
   - Result/Error types
 
 ### cvdtrader-market-data

@@ -19,6 +19,22 @@ The cvdtrader-execution module handles order execution, fill tracking, and time-
   - Comprehensive error handling and logging
   - API request/response handling with proper error conversion
 
+### Error Types (errors.rs)
+- **ExecutionError**: Specific error types for execution operations
+- **Error Categories**:
+  - **Network**: Connection issues (retryable)
+  - **Validation**: Order validation failures (not retryable)
+  - **Exchange**: API errors with error codes (conditionally retryable)
+  - **Timeout**: Request timeouts (retryable)
+  - **RateLimited**: Rate limit exceeded (retryable with backoff)
+  - **InsufficientBalance**: Not enough funds (not retryable)
+  - **Rejected**: Order rejected by exchange (not retryable)
+  - **PositionNotFound**: Position doesn't exist (not retryable)
+  - **OrderNotFound**: Order doesn't exist (not retryable)
+- **Key Methods**:
+  - is_retryable(): Check if error can be retried
+  - retry_delay_secs(): Get recommended retry delay
+
 #### Order Placement Process
 1. Convert TradeSignal to OrderRequest format for Hyperliquid API
 2. Set order parameters (symbol, side, price, size, order type)
@@ -64,16 +80,17 @@ The cvdtrader-execution module handles order execution, fill tracking, and time-
 
 ### TTL Tracker (ttl.rs)
 - **OrderTtlTracker**: Automatically cancels orders that exceed their time-to-live
-- **Periodic Checking**: Uses tokio::time::interval for regular checks (every 10 seconds)
+- **Periodic Checking**: Uses tokio::time::interval for regular checks (configurable interval)
 - **Key Features**:
   - Configurable TTL duration (default: 120 seconds)
+  - Configurable check interval (ttl_check_interval_secs, default: 10 seconds)
   - Background task that runs independently
   - Shutdown handling via broadcast channels
   - Only cancels orders in Pending status
   - Comprehensive logging of cancellation events
 
 #### TTL Checking Process
-1. Wake up on interval tick (every 10 seconds)
+1. Wake up on interval tick (configurable, default: 10 seconds)
 2. Retrieve all orders from GlobalState
 3. For each Pending order:
    - Check if order.is_expired(ttl_seconds)
@@ -107,8 +124,8 @@ The cvdtrader-execution module handles order execution, fill tracking, and time-
 1. Add configurable API endpoints and order types
 2. Implement retry logic with exponential backoff for API failures
 3. Enhance DryRun mode to simulate realistic order lifecycles (pending → filled/cancelled)
-4. Make TTL checking interval configurable
-5. Add more specific error types for different failure modes
+4. TTL checking interval now configurable (ttl_check_interval_secs)
+5. Specific error types added (ExecutionError enum)
 
 ### Medium-term Enhancements
 1. Add order amendment/modification capabilities

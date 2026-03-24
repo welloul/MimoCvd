@@ -448,6 +448,61 @@ impl TradeSignal {
     }
 }
 
+/// Trade record for completed trades (entry + exit)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TradeRecord {
+    pub id: String,
+    pub symbol: String,
+    pub side: PositionSide,
+    pub size: f64,
+    pub entry_price: f64,
+    pub exit_price: f64,
+    pub entry_time: DateTime<Utc>,
+    pub exit_time: DateTime<Utc>,
+    pub pnl: f64,
+    pub pnl_pct: f64,
+    pub exit_reason: ExitReason,
+    pub setup_type: Option<SetupType>,
+}
+
+impl TradeRecord {
+    pub fn new(position: &Position, exit_price: f64, exit_reason: ExitReason) -> Self {
+        let exit_time = Utc::now();
+        let pnl = match position.side {
+            PositionSide::Long => (exit_price - position.entry_price) * position.size,
+            PositionSide::Short => (position.entry_price - exit_price) * position.size,
+        };
+        let pnl_pct = (pnl / (position.entry_price * position.size)) * 100.0;
+
+        Self {
+            id: Uuid::new_v4().to_string(),
+            symbol: position.symbol.clone(),
+            side: position.side,
+            size: position.size,
+            entry_price: position.entry_price,
+            exit_price,
+            entry_time: position.entry_time,
+            exit_time,
+            pnl,
+            pnl_pct,
+            exit_reason,
+            setup_type: None,
+        }
+    }
+
+    /// Get trade duration in seconds
+    pub fn duration_secs(&self) -> i64 {
+        self.exit_time
+            .signed_duration_since(self.entry_time)
+            .num_seconds()
+    }
+
+    /// Check if trade was profitable
+    pub fn is_profitable(&self) -> bool {
+        self.pnl > 0.0
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

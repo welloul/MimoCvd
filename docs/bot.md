@@ -10,27 +10,30 @@ The cvdtrader-bot module serves as the main orchestrator that coordinates all ot
 - **Key Components**:
   - Config: System configuration
   - GlobalState: Shared state accessible to all components
+  - TradeHistory: SQLite-based trade persistence
   - Shutdown Signal: Broadcast channel for graceful shutdown coordination
-- **Responsibility**: Initialize components, start/stop systems, manage main event loop
+- **Responsibility**: Initialize components, start/stop systems, manage main event loop, record completed trades
 
 ### Initialization Process
 1. **Bot::new(config)**:
    - Creates broadcast channel for shutdown signaling
    - Initializes fresh GlobalState
+   - Initializes TradeHistory database (trades.db)
    - Stores configuration reference
-   - Returns configured Bot instance
+   - Returns configured Bot instance (Result<Self>)
 
 2. **Component Initialization (in start() method)**:
    - Logging initialization based on config
-   - Channel creation for trade and candle data flow
-   - WebSocket connection setup (HyperliquidWs)
-   - CandleBuilder initialization
-   - Strategy (CvdPocStrategy) initialization with config parameters
+   - Channel creation for trade and candle data flow (configurable buffer sizes)
+   - WebSocket connection setup (HyperliquidWs) with metadata fetching
+   - CandleBuilder initialization with tick sizes from exchange
+   - Strategy (CvdPocStrategy) initialization with per-symbol tick sizes
    - ExecutionGateway setup
    - FillTracker initialization
-   - OrderTtlTracker setup
-   - RiskManager initialization
+   - OrderTtlTracker setup with configurable check interval
+   - RiskManager initialization with account balance and execution mode
    - CircuitBreaker initialization
+   - Health check server initialization (configurable port)
 
 ### Main Event Loop (run_event_loop method)
 The core processing loop that handles real-time trading operations:
@@ -77,15 +80,15 @@ The core processing loop that handles real-time trading operations:
 1. **Tight Coupling**: Bot has direct knowledge of all component types - makes plugging alternatives difficult
 2. **Configuration Passing**: Some components receive config values indirectly rather than full config object
 3. **Error Propagation**: Some errors in component initialization use unwrap() rather than proper error handling
-4. **Hardcoded Values**: RiskManager account balance hardcoded to 10000.0 rather than configurable
-5. **Channel Sizing**: Fixed channel buffer sizes (1000 for trades, 100 for candles) may not suit all workloads
-6. **Startup Sequence**: No health checks or dependency validation during startup
+4. **Account Balance**: Now configurable via RiskConfig.account_balance (hybrid approach)
+5. **Channel Sizing**: Buffer sizes now configurable via BotConfig (trade_buffer_size, candle_buffer_size)
+6. **Startup Sequence**: Health check server added, but no dependency validation during startup
 
 ### Technical Debt
-1. **TODO Comments**: Multiple TODO items in event loop (indicator updates with candles)
-2. **Magic Numbers**: Hardcoded values throughout (channel sizes, intervals, etc.)
+1. **TODO Comments**: Multiple TODO items in event loop (indicator updates with candles, candle export to JSON)
+2. **Magic Numbers**: Some hardcoded values remain (intervals, etc.) - channel sizes now configurable
 3. **Resource Cleanup**: Shutdown sequence could be more robust in error scenarios
-4. **Testing Infrastructure**: Limited integration testing of full bot lifecycle
+4. **Testing Infrastructure**: Integration tests added for bot lifecycle
 5. **Configuration Validation**: Relies on individual component validation rather than holistic validation
 
 ### Performance Considerations
@@ -98,16 +101,16 @@ The core processing loop that handles real-time trading operations:
 ## Future Roadmap
 ### Immediate Improvements
 1. Complete TODO items in event loop (candle-based indicator updates)
-2. Make all hardcoded values configurable (channel sizes, intervals, account balance)
+2. Channel sizes and account balance now configurable
 3. Enhance error handling during component initialization
-4. Add health check validation during startup
+4. Health check server added (configurable port)
 5. Implement more graceful error recovery in shutdown sequence
 
 ### Medium-term Enhancements
 1. Implement plugin architecture for exchange/strategy/risk components
 2. Add comprehensive metrics collection and reporting (Prometheus endpoints)
 3. Implement configuration hot-reloading without restart
-4. Add health check endpoints and monitoring capabilities
+4. Health check endpoint added (/health on configurable port)
 5. Optimize channel usage with dynamic sizing based on load
 
 ### Long-term Goals

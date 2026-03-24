@@ -9,7 +9,7 @@ async fn main() -> Result<()> {
     let config = Config::load("config.toml")?;
 
     // Create and start bot
-    let bot = Bot::new(config);
+    let bot = Bot::new(config)?;
 
     info!("Starting CVDTrader bot");
     match bot.start().await {

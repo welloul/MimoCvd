@@ -7,16 +7,18 @@ The cvdtrader-market-data module handles all market data processing, including W
 
 ### WebSocket Connection (websocket.rs)
 - **HyperliquidWs**: Main WebSocket client for Hyperliquid exchange
-- **Connection Management**: Automatic reconnection with exponential backoff
-- **Subscription Handling**: Subscribes to trade data for configured symbols
+- **Connection Management**: Automatic reconnection with exponential backoff (with jitter for better distribution)
+- **Subscription Handling**: Subscribes to trade data for configured symbols (tracks subscribed symbols to avoid duplicates)
 - **Message Parsing**: Converts WebSocket messages to internal Trade structs
 - **Error Handling**: Comprehensive error handling with logging and recovery
+- **Metadata Fetching**: Fetches exchange metadata (tick sizes) using hyperliquid-rust-sdk InfoClient
 - **Key Features**:
   - Async connection using tokio-tungstenite
-  - Automatic reconnection with configurable retry limits
+  - Automatic reconnection with configurable retry limits and jitter
   - Graceful shutdown handling via broadcast channels
   - Trade data parsing and validation
   - Latency-insensitive message processing
+  - Per-symbol tick size management from exchange metadata
 
 ### Candle Builder (candle_builder.rs)
 - **CandleBuilder**: Aggregates individual trades into time-based candles
@@ -37,9 +39,9 @@ The cvdtrader-market-data module handles all market data processing, including W
 - **Volume Aggregation**: Sums volume at each price level
 - **POC Calculation**: Identifies price level with maximum volume
 - **Key Features**:
-  - Configurable tick size for different instruments
+  - Configurable tick size for different instruments (now fetched from exchange metadata)
   - Efficient hashmap-based volume profiling
-  - Per-symbol volume profiles
+  - Per-symbol volume profiles (strategy maintains separate builders per symbol)
   - POC calculation on demand (when candle is completed)
   - Memory cleanup mechanisms (clear symbol/all)
   - Comprehensive test suite
@@ -83,7 +85,7 @@ The cvdtrader-market-data module handles all market data processing, including W
 5. **Tick Size Assumption**: Volume profile uses fixed tick size rather than dynamic exchange-provided values
 
 ### Technical Debt
-1. **WebSocket Subscription Resubscription**: On reconnection, resubscribes to all symbols - could optimize to track subscription state
+1. **WebSocket Subscription State**: Now tracks subscribed symbols to avoid duplicate subscriptions on reconnection
 2. **Candle Finalization POC**: Currently placeholder - POC calculation delegated to VolumeProfileBuilder but could be integrated
 3. **Indicator Redundancy**: Some duplication between IndicatorCompute and strategy-specific calculations
 4. **Error Propagation**: Some functions use unwrap()/expect() in non-test code
@@ -99,14 +101,14 @@ The cvdtrader-market-data module handles all market data processing, including W
 ## Future Roadmap
 ### Immediate Improvements
 1. Implement true POC calculation in candle finalization step
-2. Add WebSocket subscription state tracking to reduce resubscription overhead
+2. WebSocket subscription state tracking implemented (tracks subscribed symbols)
 3. Enhance error handling to use custom error types where appropriate
 4. Add metrics collection for message processing latency
-5. Implement configurable channel buffer sizes
+5. Configurable channel buffer sizes implemented (via BotConfig)
 
 ### Medium-term Enhancements
 1. Replace volume profile reset-per-candle with rolling window approach
-2. Add adaptive tick size resolution from exchange metadata
+2. Adaptive tick size resolution from exchange metadata implemented
 3. Implement exchange time synchronization for VWAP reset accuracy
 4. Add historical data replay capability for strategy testing
 5. Optimize hashmap usage with pre-sizing where possible

@@ -327,10 +327,10 @@ mod tests {
         let evaluator = SignalEvaluator::new(20, 0.70, 0.90, 2, 1.5, 0.001);
 
         let long_entry = evaluator.calculate_entry_price(50000.0, Signal::Long);
-        assert_eq!(long_entry, 49950.0); // 50000 * (1 - 0.001)
+        assert!((long_entry - 49950.0).abs() < 0.001); // 50000 * (1 - 0.001)
 
         let short_entry = evaluator.calculate_entry_price(50000.0, Signal::Short);
-        assert_eq!(short_entry, 50050.0); // 50000 * (1 + 0.001)
+        assert!((short_entry - 50050.0).abs() < 0.001); // 50000 * (1 + 0.001)
     }
 
     #[test]

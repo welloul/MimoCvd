@@ -18,6 +18,11 @@ impl VolumeProfileBuilder {
         }
     }
 
+    /// Get tick size
+    pub fn get_tick_size(&self) -> f64 {
+        self.tick_size
+    }
+
     /// Add a trade to the volume profile
     pub fn add_trade(&mut self, trade: &Trade) {
         let binned_price = self.bin_price(trade.price);

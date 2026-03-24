@@ -4,6 +4,8 @@ use std::collections::HashMap;
 use tokio::sync::mpsc;
 use tracing::{debug, info};
 
+use crate::VolumeProfileBuilder;
+
 /// Candle builder that aggregates trades into 1-minute candles
 pub struct CandleBuilder {
     /// Current candles being built (symbol -> candle)
@@ -12,6 +14,8 @@ pub struct CandleBuilder {
     candle_tx: mpsc::Sender<Candle>,
     /// Global state for CVD tracking
     state: GlobalState,
+    /// Volume profile builders per symbol for POC calculation
+    volume_profiles: HashMap<String, VolumeProfileBuilder>,
 }
 
 impl CandleBuilder {
@@ -21,6 +25,15 @@ impl CandleBuilder {
             current_candles: HashMap::new(),
             candle_tx,
             state,
+            volume_profiles: HashMap::new(),
+        }
+    }
+
+    /// Set tick sizes for symbols (enables POC calculation)
+    pub fn set_tick_sizes(&mut self, tick_sizes: &HashMap<String, f64>) {
+        for (symbol, tick_size) in tick_sizes {
+            self.volume_profiles
+                .insert(symbol.clone(), VolumeProfileBuilder::new(*tick_size));
         }
     }
 
@@ -41,36 +54,50 @@ impl CandleBuilder {
 
         // If we need a new candle, finalize the old one and emit it
         if needs_new_candle {
-            if let Some(completed_candle) = self.current_candles.remove(&symbol) {
-                let completed_candle = self.finalize_candle(completed_candle).await;
+            let completed_candle = if let Some(old_candle) = self.current_candles.remove(&symbol) {
+                let completed = self.finalize_candle(old_candle).await;
                 debug!(
                     "Completed candle for {}: O={} H={} L={} C={} V={} CVD={}",
                     symbol,
-                    completed_candle.open,
-                    completed_candle.high,
-                    completed_candle.low,
-                    completed_candle.close,
-                    completed_candle.volume,
-                    completed_candle.cvd
+                    completed.open,
+                    completed.high,
+                    completed.low,
+                    completed.close,
+                    completed.volume,
+                    completed.cvd
                 );
 
                 // Send completed candle
-                if let Err(e) = self.candle_tx.send(completed_candle.clone()).await {
+                if let Err(e) = self.candle_tx.send(completed.clone()).await {
                     tracing::error!("Failed to send completed candle: {}", e);
                 }
 
                 // Store in global state
                 self.state
-                    .add_candle(symbol.clone(), completed_candle.clone())
+                    .add_candle(symbol.clone(), completed.clone())
                     .await;
 
-                return Some(completed_candle);
-            }
+                Some(completed)
+            } else {
+                None
+            };
 
             // Create new candle
             let new_candle = Candle::new(symbol.clone(), candle_timestamp);
             self.current_candles.insert(symbol.clone(), new_candle);
             info!("Started new candle for {} at {}", symbol, candle_timestamp);
+
+            // If we completed a candle, return it (but continue processing the current trade)
+            if let Some(completed) = completed_candle {
+                // Add current trade to the new candle before returning
+                if let Some(candle) = self.current_candles.get_mut(&symbol) {
+                    candle.add_trade(trade);
+                    self.state
+                        .update_global_cvd(symbol.clone(), trade.delta())
+                        .await;
+                }
+                return Some(completed);
+            }
         }
 
         // Add trade to current candle
@@ -88,9 +115,17 @@ impl CandleBuilder {
 
     /// Finalize a candle (calculate POC)
     async fn finalize_candle(&self, mut candle: Candle) -> Candle {
-        // POC calculation will be done by VolumeProfileBuilder
-        // For now, just return the candle as-is
-        candle.finalize(None);
+        // Calculate POC using VolumeProfileBuilder if available
+        let poc = if let Some(vp) = self.volume_profiles.get(&candle.symbol) {
+            // Create a temporary VP to calculate POC for this candle
+            let tick_size = vp.get_tick_size();
+            let mut temp_vp = VolumeProfileBuilder::new(tick_size);
+            temp_vp.process_candle(&candle)
+        } else {
+            None
+        };
+
+        candle.finalize(poc);
         candle
     }
 

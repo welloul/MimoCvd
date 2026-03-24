@@ -1,4 +1,4 @@
-use cvdtrader_core::{GlobalState, TradeSignal};
+use cvdtrader_core::{ExecutionMode, GlobalState, TradeSignal};
 use tracing::{debug, info, warn};
 
 /// Risk manager for enforcing trading constraints
@@ -11,8 +11,10 @@ pub struct RiskManager {
     max_leverage: f64,
     /// Maximum drawdown percentage
     max_drawdown_pct: f64,
-    /// Account balance (simplified)
+    /// Account balance
     account_balance: f64,
+    /// Execution mode
+    execution_mode: ExecutionMode,
 }
 
 impl RiskManager {
@@ -23,6 +25,7 @@ impl RiskManager {
         max_leverage: f64,
         max_drawdown_pct: f64,
         account_balance: f64,
+        execution_mode: ExecutionMode,
     ) -> Self {
         Self {
             state,
@@ -30,7 +33,30 @@ impl RiskManager {
             max_leverage,
             max_drawdown_pct,
             account_balance,
+            execution_mode,
         }
+    }
+
+    /// Fetch account balance from exchange API (for live/testnet modes)
+    /// This is a placeholder - actual implementation would call exchange API
+    pub async fn fetch_account_balance(&self, api_url: &str) -> Result<f64, String> {
+        // In live/testnet mode, fetch from exchange API
+        // For now, return error to indicate this needs implementation
+        Err(format!(
+            "Account balance fetch not implemented for {} mode. API URL: {}",
+            self.execution_mode, api_url
+        ))
+    }
+
+    /// Update account balance (for live mode)
+    pub fn update_account_balance(&mut self, balance: f64) {
+        info!("Updating account balance to {}", balance);
+        self.account_balance = balance;
+    }
+
+    /// Get execution mode
+    pub fn execution_mode(&self) -> ExecutionMode {
+        self.execution_mode
     }
 
     /// Validate a trade signal against risk constraints
@@ -73,10 +99,7 @@ impl RiskManager {
 
         // Check if we already have a position for this symbol
         if self.state.has_position(&signal.symbol).await {
-            return Err(format!(
-                "Already have a position for {}",
-                signal.symbol
-            ));
+            return Err(format!("Already have a position for {}", signal.symbol));
         }
 
         info!(
@@ -90,10 +113,7 @@ impl RiskManager {
     /// Get total exposure across all positions
     async fn get_total_exposure(&self) -> f64 {
         let positions = self.state.get_all_positions().await;
-        positions
-            .values()
-            .map(|p| p.entry_price * p.size)
-            .sum()
+        positions.values().map(|p| p.entry_price * p.size).sum()
     }
 
     /// Calculate current drawdown
@@ -143,7 +163,7 @@ mod tests {
     #[tokio::test]
     async fn test_risk_manager_validate_signal() {
         let state = GlobalState::new();
-        let manager = RiskManager::new(state, 1000.0, 10.0, 0.05, 10000.0);
+        let manager = RiskManager::new(state, 1000.0, 10.0, 0.05, 10000.0, ExecutionMode::DryRun);
 
         let signal = TradeSignal::new(
             Signal::Long,
@@ -161,7 +181,7 @@ mod tests {
     #[tokio::test]
     async fn test_risk_manager_position_size_limit() {
         let state = GlobalState::new();
-        let manager = RiskManager::new(state, 1000.0, 10.0, 0.05, 10000.0);
+        let manager = RiskManager::new(state, 1000.0, 10.0, 0.05, 10000.0, ExecutionMode::DryRun);
 
         let signal = TradeSignal::new(
             Signal::Long,
@@ -179,7 +199,7 @@ mod tests {
     #[tokio::test]
     async fn test_risk_manager_leverage_limit() {
         let state = GlobalState::new();
-        let manager = RiskManager::new(state, 1000.0, 2.0, 0.05, 1000.0);
+        let manager = RiskManager::new(state, 1000.0, 2.0, 0.05, 1000.0, ExecutionMode::DryRun);
 
         // Add existing position
         let position = cvdtrader_core::Position::new(
@@ -190,7 +210,10 @@ mod tests {
             2900.0,
             3200.0,
         );
-        manager.state.set_position("ETH".to_string(), position).await;
+        manager
+            .state
+            .set_position("ETH".to_string(), position)
+            .await;
 
         let signal = TradeSignal::new(
             Signal::Long,
@@ -208,7 +231,14 @@ mod tests {
     #[tokio::test]
     async fn test_risk_manager_existing_position() {
         let state = GlobalState::new();
-        let manager = RiskManager::new(state.clone(), 1000.0, 10.0, 0.05, 10000.0);
+        let manager = RiskManager::new(
+            state.clone(),
+            1000.0,
+            10.0,
+            0.05,
+            10000.0,
+            ExecutionMode::DryRun,
+        );
 
         // Add existing position
         let position = cvdtrader_core::Position::new(
@@ -219,7 +249,10 @@ mod tests {
             49000.0,
             52000.0,
         );
-        manager.state.set_position("BTC".to_string(), position).await;
+        manager
+            .state
+            .set_position("BTC".to_string(), position)
+            .await;
 
         let signal = TradeSignal::new(
             Signal::Long,

@@ -5,7 +5,7 @@
 name = "hyperliquid"
 ws_url = "wss://api.hyperliquid.xyz/ws"
 api_url = "https://api.hyperliquid.xyz"
-symbols = ["BTC", "ETH", "SOL"]
+symbols = ["ZEC", "SUI", "SOL", "TAO", "DOGE", "XMR", "ARB", "HYPE", "AVAX"]
 
 [strategy]
 name = "cvd_poc"
@@ -22,12 +22,19 @@ max_leverage = 10.0
 max_drawdown_pct = 0.05  # 5%
 circuit_breaker_latency_ms = 500
 circuit_breaker_failures = 3
+account_balance = 10000.0  # Used in dryrun mode; in live/testnet, fetched from exchange
 
 [execution]
-mode = "dryrun"  # dryrun, testnet, live
+mode = "DryRun"  # DryRun, testnet, live
 ttl_seconds = 120
 post_only = true
+ttl_check_interval_secs = 10  # How often to check for expired orders
+
+[bot]
+trade_buffer_size = 1000  # Channel buffer size for trade messages
+candle_buffer_size = 100  # Channel buffer size for candle messages
+health_check_port = 8080  # Port for health check HTTP endpoint (0 to disable)
 
 [logging]
-level = "info"  # trace, debug, info, warn, error
+level = "debug"  # trace, debug, info, warn, error
 format = "json"  # json, pretty

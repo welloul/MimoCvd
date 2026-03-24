@@ -15,12 +15,13 @@
 - **Do not remove** the circuit breaker functionality - it's critical for production stability
 
 ## Known Failures & Technical Debt
-1. **WebSocket Reconnection**: While implemented, the exponential backoff could be tuned for specific network conditions
-2. **Volume Profile Calculation**: Currently resets per candle - could be optimized to maintain rolling window
+1. **WebSocket Reconnection**: While implemented, the exponential backoff could be tuned for specific network conditions (jitter added for better distribution)
+2. **Volume Profile Calculation**: Currently resets per candle - loses historical volume context between candles (now uses per-symbol builders)
 3. **Signal Generator**: Uses simplified history retrieval (TODO comments in strategy module) - needs integration with global state
 4. **VWAP Integration**: Marked as TODO in strategy - needs connection to actual VWAP tracker
 5. **Configuration Validation**: Some edge cases in config validation could be strengthened
-6. **Error Handling**: Some API calls in execution gateway could benefit from more specific error types
+6. **Error Handling**: Some API calls in execution gateway could benefit from more specific error types (ExecutionError enum added)
+7. **Unused Imports**: Some modules have unused imports (e.g., cvd_poc.rs) - cosmetic issue, doesn't affect functionality (cleaned up)
 
 ## Performance Constraints
 - **Latency Target**: <1ms for indicator calculations
