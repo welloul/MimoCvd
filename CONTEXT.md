@@ -20,8 +20,8 @@ The project follows a modular, layered architecture with clear separation of con
 │         │                   │                   │           │
 │         ▼                   ▼                   ▼           │
 │  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐  │
-│  │  WebSocket   │    │  CVD/POC/    │    │  Signal      │  │
-│  │  Connection  │    │  VWAP Calc   │    │  Evaluation  │  │
+│  │  WebSocket   │    │  CVD/POC     │    │  Signal      │  │
+│  │  Connection  │    │  Calc        │    │  Evaluation  │  │
 │  └──────────────┘    └──────────────┘    └──────────────┘  │
 │                                                             │
 │  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐  │
@@ -61,7 +61,6 @@ The project follows a modular, layered architecture with clear separation of con
   - HyperliquidWs: WebSocket client with automatic reconnection
   - CandleBuilder: Aggregates trades into 1-minute candles
   - VolumeProfileBuilder: Calculates Point of Control (POC)
-  - VWAPTracker: Volume-weighted average price with daily reset
   - IndicatorCompute: CVD, RVOL, and historical indicators
 
 ### cvdtrader-strategy
@@ -74,7 +73,7 @@ The project follows a modular, layered architecture with clear separation of con
   - Swing detection with configurable lookback period
   - Exhaustion setup: CVD conviction weakening
   - Absorption setup: Price breaks extreme with range contraction
-  - VWAP and POC confirmation for direction
+  - POC confirmation for direction
   - CVD-based trailing stop logic for position exits
 
 ### cvdtrader-execution
@@ -111,9 +110,7 @@ The project follows a modular, layered architecture with clear separation of con
 ## Known Issues & Technical Debt
 
 ### High Priority
-1. **Signal Generator History Integration**: SignalEvaluator uses empty history vector instead of pulling from GlobalState
-2. **VWAP Integration**: Strategy signals don't use actual VWAP data (marked as TODO)
-3. **WebSocket Reconnection**: Exponential backoff may not be optimal for all network partition scenarios
+1. **WebSocket Reconnection**: Exponential backoff may not be optimal for all network partition scenarios
 
 ### Medium Priority
 4. **Configuration Hot Reloading**: Requires bot restart to pick up configuration changes
@@ -172,7 +169,6 @@ Provides comprehensive querying capabilities for post-trade analysis.
 - Configuration hot-reloading
 - Enhanced error handling with specific error types
 - Improved circuit breaker with automatic reset
-- VWAP integration in strategy signals
 - Optimized volume profile with rolling window
 
 ### v1.2.0
@@ -234,11 +230,9 @@ Provides comprehensive querying capabilities for post-trade analysis.
 ### Known Failures
 1. WebSocket reconnection exponential backoff tuning
 2. Volume profile calculation resets per candle (loses historical context)
-3. Signal generator uses simplified history retrieval
-4. VWAP integration marked as TODO
-5. Configuration validation edge cases
-6. Error handling could use more specific types
-7. Unused imports in some modules
+3. Configuration validation edge cases
+4. Error handling could use more specific types
+5. Unused imports in some modules
 
 ## ASCII Diagrams for Key Flows
 

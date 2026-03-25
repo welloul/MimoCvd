@@ -17,8 +17,8 @@ CVDTrader follows a modular, layered architecture designed for low-latency tradi
 │         │                   │                   │           │
 │         ▼                   ▼                   ▼           │
 │  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐  │
-│  │  WebSocket   │    │  CVD/POC/    │    │  Signal      │  │
-│  │  Connection  │    │  VWAP Calc   │    │  Evaluation  │  │
+│  │  WebSocket   │    │  CVD/POC     │    │  Signal      │  │
+│  │  Connection  │    │  Calc        │    │  Evaluation  │  │
 │  └──────────────┘    └──────────────┘    └──────────────┘  │
 │                                                             │
 │  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐  │
@@ -80,7 +80,6 @@ CVDTrader follows a modular, layered architecture designed for low-latency tradi
   - WebSocket (Hyperliquid connection)
   - CandleBuilder (trade aggregation)
   - VolumeProfileBuilder (POC calculation)
-  - VWAPTracker (volume-weighted average price)
   - Indicators (CVD, RVOL, etc.)
 
 ### cvdtrader-strategy

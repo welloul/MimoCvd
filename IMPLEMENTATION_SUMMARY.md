@@ -23,7 +23,6 @@ Successfully implemented a complete low-latency Rust trading bot for Hyperliquid
 - **WebSocket**: Hyperliquid connection with auto-reconnect
 - **CandleBuilder**: 1-minute candle aggregation from trades
 - **VolumeProfileBuilder**: POC (Point of Control) calculation
-- **DailyVWAPTracker**: Daily VWAP with automatic reset at 00:00 UTC
 - **IndicatorCompute**: CVD, RVOL, and percentile calculations
 
 #### cvdtrader-strategy
@@ -118,7 +117,6 @@ cvdtrader-rust/
 │       ├── websocket.rs                # WebSocket connection
 │       ├── candle_builder.rs           # Candle aggregation
 │       ├── volume_profile.rs           # POC calculation
-│       ├── vwap.rs                     # VWAP tracking
 │       └── indicators.rs               # CVD, RVOL
 ├── cvdtrader-strategy/
 │   ├── Cargo.toml

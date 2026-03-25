@@ -9,18 +9,6 @@
    - Status: Open
    - Assigned: None
 
-2. **Signal Generator History Integration**
-   - Description: SignalEvaluator uses empty history vector instead of pulling from GlobalState
-   - Impact: High - affects signal accuracy until lookback period is satisfied
-   - Status: Open
-   - Assigned: None
-
-3. **VWAP Integration in Strategy**
-   - Description: Strategy signals don't use actual VWAP data (marked as TODO)
-   - Impact: Medium - reduces signal quality and accuracy
-   - Status: Open
-   - Assigned: None
-
 ### Medium Priority
 4. **Configuration Hot Reloading**
    - Description: Requires bot restart to pick up configuration changes
@@ -43,8 +31,21 @@
 
 ## Closed Issues
 
+### Resolved in Session: March 25, 2026
+1. **Signal Generator History Integration** ✅
+   - Description: SignalEvaluator uses empty history vector instead of pulling from GlobalState
+   - Impact: High - affects signal accuracy until lookback period is satisfied
+   - Resolution: Updated process_candle to retrieve candle history from GlobalState and pass to evaluate_signal
+   - Closed: March 25, 2026
+
+2. **VWAP Integration in Strategy** ✅
+   - Description: Strategy signals don't use actual VWAP data (marked as TODO)
+   - Impact: Medium - reduces signal quality and accuracy
+   - Resolution: VWAP module removed from codebase - not needed for current strategy implementation
+   - Closed: March 25, 2026
+
 ### Resolved in Session: March 24, 2026
-1. **Risk Manager Account Balance** ✅
+3. **Risk Manager Account Balance** ✅
    - Description: Uses hardcoded 10000.0 balance rather than configurable value
    - Impact: Medium - inaccurate leverage calculations
    - Resolution: Added account_balance to RiskConfig, hybrid approach (config for dryrun, API for live)

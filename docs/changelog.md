@@ -70,7 +70,6 @@ This is the initial release of the CVDTrader project. All features listed above 
 - Configuration hot-reloading capability
 - Enhanced error handling with specific error types
 - Improved circuit breaker with automatic reset
-- VWAP integration in strategy signals
 - Optimized volume profile with rolling window
 
 ### v1.2.0

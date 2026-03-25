@@ -16,8 +16,8 @@ A production-ready, low-latency Rust trading bot for Hyperliquid exchange, imple
 │         │                   │                   │           │
 │         ▼                   ▼                   ▼           │
 │  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐  │
-│  │  WebSocket   │    │  CVD/POC/    │    │  Signal      │  │
-│  │  Connection  │    │  VWAP Calc   │    │  Evaluation  │  │
+│  │  WebSocket   │    │  CVD/POC     │    │  Signal      │  │
+│  │  Connection  │    │  Calc        │    │  Evaluation  │  │
 │  └──────────────┘    └──────────────┘    └──────────────┘  │
 │                                                             │
 │  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐  │

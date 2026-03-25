@@ -1,7 +1,9 @@
 # CVDTrader Market Data Module Documentation
 
 ## Responsibility
-The cvdtrader-market-data module handles all market data processing, including WebSocket connectivity, candle building, volume profile calculations, VWAP tracking, and technical indicator computations. It transforms raw trade data into actionable market intelligence for the strategy layer.
+The cvdtrader-market-data module handles all market data processing, including WebSocket connectivity, candle building, volume profile calculations, and technical indicator computations. It transforms raw trade data into actionable market intelligence for the strategy layer.
+
+**Note**: VWAP module has been removed in this version.
 
 ## Key Logic & Functions
 
@@ -19,6 +21,7 @@ The cvdtrader-market-data module handles all market data processing, including W
   - Trade data parsing and validation
   - Latency-insensitive message processing
   - Per-symbol tick size management from exchange metadata
+  - **Non-blocking Reconnection**: WebSocket reconnection now runs as background task (non-blocking)
 
 ### Candle Builder (candle_builder.rs)
 - **CandleBuilder**: Aggregates individual trades into time-based candles
@@ -46,19 +49,6 @@ The cvdtrader-market-data module handles all market data processing, including W
   - Memory cleanup mechanisms (clear symbol/all)
   - Comprehensive test suite
 
-### VWAP Tracker (vwap.rs)
-- **DailyVWAPTracker**: Calculates volume-weighted average price with daily reset
-- **Cumulative Calculation**: Maintains running PV (price*volume) and volume sums
-- **Daily Reset**: Automatically resets at midnight UTC
-- **Symbol Tracking**: Independent VWAP calculation per symbol
-- **Key Features**:
-  - Date-based reset detection
-  - Efficient incremental updates
-  - Thread-safe-ish design (single-threaded access assumed)
-  - Symbol-specific tracking
-  - Reset capabilities (symbol-specific and global)
-  - Extensive test coverage including daily reset scenarios
-
 ### Indicators (indicators.rs)
 - **IndicatorCompute**: Calculates various technical indicators
 - **Global CVD**: Tracks cumulative volume delta per symbol
@@ -81,8 +71,6 @@ The cvdtrader-market-data module handles all market data processing, including W
 1. **WebSocket Backpressure**: If processing lags behind message rate, memory usage could grow in channels
 2. **Volume Profile Reset**: Currently resets per candle - loses historical volume context between candles
 3. **Indicator History Bounded**: Fixed maximum history may not suit all trading strategies
-4. **VWAP Drift**: No mechanism to handle exchange time drift or daylight saving changes
-5. **Tick Size Assumption**: Volume profile uses fixed tick size rather than dynamic exchange-provided values
 
 ### Technical Debt
 1. **WebSocket Subscription State**: Now tracks subscribed symbols to avoid duplicate subscriptions on reconnection
@@ -101,17 +89,14 @@ The cvdtrader-market-data module handles all market data processing, including W
 ## Future Roadmap
 ### Immediate Improvements
 1. Implement true POC calculation in candle finalization step
-2. WebSocket subscription state tracking implemented (tracks subscribed symbols)
-3. Enhance error handling to use custom error types where appropriate
-4. Add metrics collection for message processing latency
-5. Configurable channel buffer sizes implemented (via BotConfig)
+2. Enhance error handling to use custom error types where appropriate
+3. Add metrics collection for message processing latency
 
 ### Medium-term Enhancements
 1. Replace volume profile reset-per-candle with rolling window approach
 2. Adaptive tick size resolution from exchange metadata implemented
-3. Implement exchange time synchronization for VWAP reset accuracy
-4. Add historical data replay capability for strategy testing
-5. Optimize hashmap usage with pre-sizing where possible
+3. Add historical data replay capability for strategy testing
+4. Optimize hashmap usage with pre-sizing where possible
 
 ### Long-term Goals
 1. Pluggable data sources (WebSocket, REST, file-based for testing)
