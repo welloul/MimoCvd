@@ -236,27 +236,29 @@ impl SignalGenerator for SignalEvaluator {
             return None;
         }
 
-        // Check setup types
-        let is_exhaustion = self.is_exhaustion_setup(candle, prev_candle);
-        let is_absorption = self.is_absorption_setup(candle, prev_candle, indicators);
-
-        if !is_exhaustion && !is_absorption {
-            return None;
-        }
-
-        // Determine setup type
-        let setup_type = if is_exhaustion {
-            SetupType::Exhaustion
-        } else {
-            SetupType::Absorption
-        };
-
-        // Determine direction
+        // Determine direction first
         let signal = self.determine_direction(candle, is_new_high, is_new_low)?;
 
         if signal == Signal::None {
             return None;
         }
+
+        // Check for CVD flip (simplified signal condition)
+        let prev_cvd_sign = prev_candle.cvd.signum();
+        let curr_cvd_sign = candle.cvd.signum();
+
+        let cvd_flipped = match signal {
+            Signal::Short => prev_cvd_sign > 0.0 && curr_cvd_sign < 0.0, // Positive to negative
+            Signal::Long => prev_cvd_sign < 0.0 && curr_cvd_sign > 0.0,  // Negative to positive
+            Signal::None => false,
+        };
+
+        if !cvd_flipped {
+            return None;
+        }
+
+        // Use flip as setup type
+        let setup_type = SetupType::Exhaustion; // Simplified - could differentiate later
 
         // Calculate order parameters
         let poc = candle.poc.unwrap();
