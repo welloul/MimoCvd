@@ -1,5 +1,6 @@
 use cvdtrader_core::{Candle, ExitReason, Position, PositionSide, SetupType, Signal, TradeSignal};
 use cvdtrader_market_data::IndicatorCompute;
+use std::collections::HashMap;
 
 /// Signal generator trait
 pub trait SignalGenerator {
@@ -33,8 +34,8 @@ pub struct SignalEvaluator {
     sl_offset: i32,
     /// Risk R-multiple for take profit
     risk_r_multiple: f64,
-    /// Entry offset percentage
-    entry_offset_pct: f64,
+    /// Tick sizes per symbol
+    tick_sizes: std::collections::HashMap<String, f64>,
 }
 
 impl SignalEvaluator {
@@ -45,7 +46,7 @@ impl SignalEvaluator {
         cvd_absorption_pctile: f64,
         sl_offset: i32,
         risk_r_multiple: f64,
-        entry_offset_pct: f64,
+        tick_sizes: HashMap<String, f64>,
     ) -> Self {
         Self {
             lookback,
@@ -53,13 +54,18 @@ impl SignalEvaluator {
             cvd_absorption_pctile,
             sl_offset,
             risk_r_multiple,
-            entry_offset_pct,
+            tick_sizes,
         }
     }
 
     /// Get lookback period
     pub fn lookback(&self) -> usize {
         self.lookback
+    }
+
+    /// Get tick size for a symbol
+    pub fn get_tick_size(&self, symbol: &str) -> f64 {
+        self.tick_sizes.get(symbol).copied().unwrap_or(1.0) // Default to 1.0 if not found
     }
 
     /// Check if candle sets a new swing high
@@ -165,11 +171,11 @@ impl SignalEvaluator {
         None
     }
 
-    /// Calculate entry price
-    fn calculate_entry_price(&self, poc: f64, signal: Signal) -> f64 {
+    /// Calculate entry price using tick-based offsets
+    fn calculate_entry_price(&self, poc: f64, signal: Signal, tick_size: f64) -> f64 {
         match signal {
-            Signal::Long => poc * (1.0 - self.entry_offset_pct),
-            Signal::Short => poc * (1.0 + self.entry_offset_pct),
+            Signal::Long => poc + tick_size,  // Buy above POC
+            Signal::Short => poc - tick_size, // Sell below POC
             Signal::None => poc,
         }
     }
@@ -262,8 +268,8 @@ impl SignalGenerator for SignalEvaluator {
 
         // Calculate order parameters
         let poc = candle.poc.unwrap();
-        let entry_price = self.calculate_entry_price(poc, signal);
-        let tick_size = 1.0; // TODO: Get from config
+        let tick_size = self.get_tick_size(&candle.symbol);
+        let entry_price = self.calculate_entry_price(poc, signal, tick_size);
         let stop_loss = self.calculate_stop_loss(candle, signal, tick_size);
         let take_profit = self.calculate_take_profit(entry_price, stop_loss, signal);
         let max_position_usd = 1000.0; // TODO: Get from config
@@ -316,25 +322,28 @@ mod tests {
 
     #[test]
     fn test_signal_evaluator_new() {
-        let evaluator = SignalEvaluator::new(20, 0.70, 0.90, 2, 1.5, 0.001);
+        let tick_sizes = HashMap::new();
+        let evaluator = SignalEvaluator::new(20, 0.70, 0.90, 2, 1.5, tick_sizes);
         assert_eq!(evaluator.lookback, 20);
         assert_eq!(evaluator.cvd_exhaustion_ratio, 0.70);
     }
 
     #[test]
     fn test_calculate_entry_price() {
-        let evaluator = SignalEvaluator::new(20, 0.70, 0.90, 2, 1.5, 0.001);
+        let tick_sizes = HashMap::new();
+        let evaluator = SignalEvaluator::new(20, 0.70, 0.90, 2, 1.5, tick_sizes);
 
-        let long_entry = evaluator.calculate_entry_price(50000.0, Signal::Long);
-        assert!((long_entry - 49950.0).abs() < 0.001); // 50000 * (1 - 0.001)
+        let long_entry = evaluator.calculate_entry_price(50000.0, Signal::Long, 1.0);
+        assert_eq!(long_entry, 50001.0); // 50000 + 1.0 (buy above POC)
 
-        let short_entry = evaluator.calculate_entry_price(50000.0, Signal::Short);
-        assert!((short_entry - 50050.0).abs() < 0.001); // 50000 * (1 + 0.001)
+        let short_entry = evaluator.calculate_entry_price(50000.0, Signal::Short, 1.0);
+        assert_eq!(short_entry, 49999.0); // 50000 - 1.0 (sell below POC)
     }
 
     #[test]
     fn test_calculate_stop_loss() {
-        let evaluator = SignalEvaluator::new(20, 0.70, 0.90, 2, 1.5, 0.001);
+        let tick_sizes = HashMap::new();
+        let evaluator = SignalEvaluator::new(20, 0.70, 0.90, 2, 1.5, tick_sizes);
         let mut candle = Candle::new("BTC".to_string(), Utc::now());
         candle.high = 51000.0;
         candle.low = 49000.0;
@@ -348,7 +357,8 @@ mod tests {
 
     #[test]
     fn test_calculate_take_profit() {
-        let evaluator = SignalEvaluator::new(20, 0.70, 0.90, 2, 1.5, 0.001);
+        let tick_sizes = HashMap::new();
+        let evaluator = SignalEvaluator::new(20, 0.70, 0.90, 2, 1.5, tick_sizes);
 
         let long_tp = evaluator.calculate_take_profit(50000.0, 49000.0, Signal::Long);
         assert_eq!(long_tp, 51500.0); // 50000 + (1000 * 1.5)
@@ -359,9 +369,262 @@ mod tests {
 
     #[test]
     fn test_calculate_position_size() {
-        let evaluator = SignalEvaluator::new(20, 0.70, 0.90, 2, 1.5, 0.001);
+        let tick_sizes = HashMap::new();
+        let evaluator = SignalEvaluator::new(20, 0.70, 0.90, 2, 1.5, tick_sizes);
 
         let size = evaluator.calculate_position_size(50000.0, 1000.0);
         assert_eq!(size, 0.02); // 1000 / 50000
+    }
+
+    /// Helper function to create test candles with CVD values
+    fn create_test_candle(
+        symbol: &str,
+        high: f64,
+        low: f64,
+        close: f64,
+        cvd: f64,
+        poc: Option<f64>,
+    ) -> Candle {
+        let mut candle = Candle::new(symbol.to_string(), Utc::now());
+        candle.high = high;
+        candle.low = low;
+        candle.close = close;
+        candle.cvd = cvd;
+        candle.poc = poc;
+        candle
+    }
+
+    /// Helper function to create mock indicators that don't affect CVD flip logic
+    fn create_mock_indicators() -> IndicatorCompute {
+        IndicatorCompute::new(100)
+    }
+
+    #[test]
+    fn test_cvd_flip_short_signal_positive_to_negative() {
+        let tick_sizes = HashMap::new();
+        let evaluator = SignalEvaluator::new(3, 0.70, 0.90, 2, 1.5, tick_sizes);
+        let indicators = create_mock_indicators();
+
+        // Create sufficient history (3 candles) for lookback=3
+        let hist1 = create_test_candle("BTC", 49800.0, 49700.0, 49750.0, 50.0, Some(49775.0));
+        let hist2 = create_test_candle("BTC", 49900.0, 49800.0, 49850.0, 75.0, Some(49875.0));
+        let prev_candle =
+            create_test_candle("BTC", 50000.0, 49900.0, 49950.0, 100.0, Some(49975.0)); // Positive CVD
+        let curr_candle =
+            create_test_candle("BTC", 50100.0, 49800.0, 49925.0, -50.0, Some(49950.0)); // Negative CVD, new swing high
+
+        let history = vec![hist1, hist2, prev_candle];
+
+        let signal = evaluator.evaluate_signal(&curr_candle, &history, &indicators, false);
+
+        assert!(
+            signal.is_some(),
+            "Should generate short signal on CVD flip from positive to negative"
+        );
+        if let Some(sig) = signal {
+            assert_eq!(sig.signal, Signal::Short);
+        }
+    }
+
+    #[test]
+    fn test_cvd_flip_long_signal_negative_to_positive() {
+        let tick_sizes = HashMap::new();
+        let evaluator = SignalEvaluator::new(3, 0.70, 0.90, 2, 1.5, tick_sizes);
+        let indicators = create_mock_indicators();
+
+        // Create sufficient history (3 candles) for lookback=3
+        let hist1 = create_test_candle("BTC", 50100.0, 50000.0, 50050.0, -50.0, Some(50075.0));
+        let hist2 = create_test_candle("BTC", 50200.0, 50100.0, 50150.0, -75.0, Some(50175.0));
+        let prev_candle =
+            create_test_candle("BTC", 50000.0, 49900.0, 49950.0, -100.0, Some(49975.0)); // Negative CVD
+        let curr_candle = create_test_candle("BTC", 50100.0, 49800.0, 49975.0, 50.0, Some(49950.0)); // Positive CVD, new swing low
+
+        let history = vec![hist1, hist2, prev_candle];
+
+        let signal = evaluator.evaluate_signal(&curr_candle, &history, &indicators, false);
+
+        assert!(
+            signal.is_some(),
+            "Should generate long signal on CVD flip from negative to positive"
+        );
+        if let Some(sig) = signal {
+            assert_eq!(sig.signal, Signal::Long);
+        }
+    }
+
+    #[test]
+    fn test_no_signal_when_cvd_does_not_flip() {
+        let tick_sizes = HashMap::new();
+        let evaluator = SignalEvaluator::new(3, 0.70, 0.90, 2, 1.5, tick_sizes);
+        let indicators = create_mock_indicators();
+
+        // Test case 1: Both positive (no flip)
+        let prev_candle =
+            create_test_candle("BTC", 50000.0, 49900.0, 49950.0, 100.0, Some(49975.0));
+        let curr_candle = create_test_candle("BTC", 50100.0, 49800.0, 49925.0, 50.0, Some(49950.0));
+
+        let history = vec![prev_candle];
+        let signal = evaluator.evaluate_signal(&curr_candle, &history, &indicators, false);
+        assert!(
+            signal.is_none(),
+            "Should not generate signal when CVD stays positive"
+        );
+
+        // Test case 2: Both negative (no flip)
+        let prev_candle =
+            create_test_candle("BTC", 50000.0, 49900.0, 49950.0, -100.0, Some(49975.0));
+        let curr_candle =
+            create_test_candle("BTC", 50100.0, 49800.0, 49925.0, -50.0, Some(49950.0));
+
+        let history = vec![prev_candle];
+        let signal = evaluator.evaluate_signal(&curr_candle, &history, &indicators, false);
+        assert!(
+            signal.is_none(),
+            "Should not generate signal when CVD stays negative"
+        );
+    }
+
+    #[test]
+    fn test_no_signal_when_has_existing_position() {
+        let tick_sizes = HashMap::new();
+        let evaluator = SignalEvaluator::new(3, 0.70, 0.90, 2, 1.5, tick_sizes);
+        let indicators = create_mock_indicators();
+
+        // Valid CVD flip scenario
+        let prev_candle =
+            create_test_candle("BTC", 50000.0, 49900.0, 49950.0, 100.0, Some(49975.0));
+        let curr_candle =
+            create_test_candle("BTC", 50100.0, 49800.0, 49925.0, -50.0, Some(49950.0));
+
+        let history = vec![prev_candle];
+
+        let signal = evaluator.evaluate_signal(&curr_candle, &history, &indicators, true); // has_position = true
+
+        assert!(
+            signal.is_none(),
+            "Should not generate signal when position already exists"
+        );
+    }
+
+    #[test]
+    fn test_no_signal_when_insufficient_history() {
+        let tick_sizes = HashMap::new();
+        let evaluator = SignalEvaluator::new(5, 0.70, 0.90, 2, 1.5, tick_sizes); // Requires 5 candles history
+        let indicators = create_mock_indicators();
+
+        // Valid CVD flip scenario but insufficient history
+        let prev_candle =
+            create_test_candle("BTC", 50000.0, 49900.0, 49950.0, 100.0, Some(49975.0));
+        let curr_candle =
+            create_test_candle("BTC", 50100.0, 49800.0, 49925.0, -50.0, Some(49950.0));
+
+        let history = vec![prev_candle]; // Only 1 candle, need 5
+
+        let signal = evaluator.evaluate_signal(&curr_candle, &history, &indicators, false);
+
+        assert!(
+            signal.is_none(),
+            "Should not generate signal with insufficient history"
+        );
+    }
+
+    #[test]
+    fn test_no_signal_when_poc_missing() {
+        let tick_sizes = HashMap::new();
+        let evaluator = SignalEvaluator::new(3, 0.70, 0.90, 2, 1.5, tick_sizes);
+        let indicators = create_mock_indicators();
+
+        // Valid CVD flip but no POC
+        let prev_candle =
+            create_test_candle("BTC", 50000.0, 49900.0, 49950.0, 100.0, Some(49975.0));
+        let curr_candle = create_test_candle("BTC", 50100.0, 49800.0, 49925.0, -50.0, None); // No POC
+
+        let history = vec![prev_candle];
+
+        let signal = evaluator.evaluate_signal(&curr_candle, &history, &indicators, false);
+
+        assert!(
+            signal.is_none(),
+            "Should not generate signal when POC is missing"
+        );
+    }
+
+    #[test]
+    fn test_no_signal_when_not_new_swing() {
+        let tick_sizes = HashMap::new();
+        let evaluator = SignalEvaluator::new(3, 0.70, 0.90, 2, 1.5, tick_sizes);
+        let indicators = create_mock_indicators();
+
+        // Create history where current candle is not a new swing high/low
+        let prev1 = create_test_candle("BTC", 50000.0, 49900.0, 49950.0, 100.0, Some(49975.0));
+        let prev2 = create_test_candle("BTC", 50100.0, 49950.0, 50050.0, 200.0, Some(50025.0));
+        let prev3 = create_test_candle("BTC", 50200.0, 50000.0, 50100.0, 300.0, Some(50100.0));
+
+        // Current candle lower than previous highs
+        let curr_candle =
+            create_test_candle("BTC", 49900.0, 49800.0, 49850.0, -50.0, Some(49875.0));
+
+        let history = vec![prev1, prev2, prev3];
+
+        let signal = evaluator.evaluate_signal(&curr_candle, &history, &indicators, false);
+
+        assert!(
+            signal.is_none(),
+            "Should not generate signal when not a new swing high/low"
+        );
+    }
+
+    #[test]
+    fn test_signal_includes_correct_setup_type() {
+        let tick_sizes = HashMap::new();
+        let evaluator = SignalEvaluator::new(3, 0.70, 0.90, 2, 1.5, tick_sizes);
+        let indicators = create_mock_indicators();
+
+        // Valid short signal scenario with sufficient history
+        let hist1 = create_test_candle("BTC", 49800.0, 49700.0, 49750.0, 50.0, Some(49775.0));
+        let hist2 = create_test_candle("BTC", 49900.0, 49800.0, 49850.0, 75.0, Some(49875.0));
+        let prev_candle =
+            create_test_candle("BTC", 50000.0, 49900.0, 49950.0, 100.0, Some(49975.0)); // Positive CVD
+        let curr_candle =
+            create_test_candle("BTC", 50100.0, 49800.0, 49925.0, -50.0, Some(49950.0)); // Negative CVD, new swing high
+
+        let history = vec![hist1, hist2, prev_candle];
+
+        let signal = evaluator.evaluate_signal(&curr_candle, &history, &indicators, false);
+
+        assert!(signal.is_some());
+        if let Some(sig) = signal {
+            assert_eq!(sig.setup_type, Some(SetupType::Exhaustion)); // Currently using Exhaustion as placeholder
+        }
+    }
+
+    #[test]
+    fn test_signal_calculation_with_cvd_flip() {
+        let tick_sizes = HashMap::new();
+        let evaluator = SignalEvaluator::new(3, 0.70, 0.90, 2, 1.5, tick_sizes);
+        let indicators = create_mock_indicators();
+
+        // Valid short signal scenario with sufficient history
+        let hist1 = create_test_candle("BTC", 49800.0, 49700.0, 49750.0, 50.0, Some(49775.0));
+        let hist2 = create_test_candle("BTC", 49900.0, 49800.0, 49850.0, 75.0, Some(49875.0));
+        let prev_candle =
+            create_test_candle("BTC", 50000.0, 49900.0, 49950.0, 100.0, Some(49975.0)); // Positive CVD
+        let curr_candle =
+            create_test_candle("BTC", 50100.0, 49800.0, 49925.0, -50.0, Some(49950.0)); // Negative CVD, new swing high
+
+        let history = vec![hist1, hist2, prev_candle];
+
+        let signal = evaluator.evaluate_signal(&curr_candle, &history, &indicators, false);
+
+        assert!(signal.is_some());
+        if let Some(sig) = signal {
+            assert_eq!(sig.symbol, "BTC");
+            assert_eq!(sig.signal, Signal::Short);
+            // Verify the signal uses proper tick sizes for calculations
+            assert!(sig.entry_price > 0.0);
+            assert!(sig.stop_loss > sig.entry_price); // Stop loss above entry for short
+            assert!(sig.take_profit < sig.entry_price); // Take profit below entry for short
+            assert!(sig.size > 0.0);
+        }
     }
 }

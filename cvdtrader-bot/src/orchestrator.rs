@@ -114,7 +114,6 @@ impl Bot {
             self.config.strategy.cvd_absorption_pctile,
             self.config.strategy.sl_offset,
             self.config.strategy.risk_r_multiple,
-            self.config.strategy.entry_offset_pct,
             tick_sizes,
             self.config.risk.max_position_usd,
         );

@@ -9,9 +9,9 @@ symbols = ["ZEC", "SUI", "SOL", "TAO", "DOGE", "XMR", "ARB", "HYPE", "AVAX"]
 
 [strategy]
 name = "cvd_poc"
-lookback = 5
-cvd_exhaustion_ratio = 0.85
-cvd_absorption_pctile = 0.75
+lookback = 3
+cvd_exhaustion_ratio = 0.75
+cvd_absorption_pctile = 0.65
 sl_offset = 2
 risk_r_multiple = 1.5
 entry_offset_pct = 0.001  # 0.1%
@@ -20,7 +20,7 @@ entry_offset_pct = 0.001  # 0.1%
 max_position_usd = 1000.0
 max_leverage = 10.0
 max_drawdown_pct = 0.05  # 5%
-circuit_breaker_latency_ms = 500
+circuit_breaker_latency_ms = 1000
 circuit_breaker_failures = 3
 account_balance = 10000.0  # Used in dryrun mode; in live/testnet, fetched from exchange
 

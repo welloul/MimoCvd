@@ -31,7 +31,6 @@ impl CvdPocStrategy {
         cvd_absorption_pctile: f64,
         sl_offset: i32,
         risk_r_multiple: f64,
-        entry_offset_pct: f64,
         tick_sizes: HashMap<String, f64>,
         max_position_usd: f64,
     ) -> Self {
@@ -48,7 +47,7 @@ impl CvdPocStrategy {
                 cvd_absorption_pctile,
                 sl_offset,
                 risk_r_multiple,
-                entry_offset_pct,
+                tick_sizes.clone(),
             ),
             state,
             volume_profiles,
@@ -258,8 +257,7 @@ mod tests {
         let state = GlobalState::new();
         let mut tick_sizes = HashMap::new();
         tick_sizes.insert("BTC".to_string(), 1.0);
-        let mut strategy =
-            CvdPocStrategy::new(state, 20, 0.70, 0.90, 2, 1.5, 0.001, tick_sizes, 1000.0);
+        let mut strategy = CvdPocStrategy::new(state, 20, 0.70, 0.90, 2, 1.5, tick_sizes, 1000.0);
 
         let mut candle = Candle::new("BTC".to_string(), Utc::now());
         candle.open = 50000.0;
@@ -291,17 +289,8 @@ mod tests {
         let state = GlobalState::new();
         let mut tick_sizes = HashMap::new();
         tick_sizes.insert("BTC".to_string(), 1.0);
-        let strategy = CvdPocStrategy::new(
-            state.clone(),
-            20,
-            0.70,
-            0.90,
-            2,
-            1.5,
-            0.001,
-            tick_sizes,
-            1000.0,
-        );
+        let strategy =
+            CvdPocStrategy::new(state.clone(), 20, 0.70, 0.90, 2, 1.5, tick_sizes, 1000.0);
 
         // Create a position
         let position = Position::new(
