@@ -21,7 +21,8 @@
   - Improved precision for different trading symbols with varying tick sizes
 
 ### Fixed
-- **Tick Size Retrieval Bug**: Fixed WebSocket metadata parsing to use `px_decimals` instead of `sz_decimals`
+- **POC Calculation Bug**: Fixed incorrect POC values for ARB, DOGE, SUI by using appropriate tick sizes (0.00001) instead of coarse size-based decimals
+- **Tick Size Retrieval Bug**: Fixed WebSocket metadata parsing to use proper price precision for volume profile binning
 - **SignalEvaluator Constructor**: Updated all test cases to match new constructor signature (removed entry_offset_pct parameter)
 - **Compilation Errors**: Fixed 13+ compilation errors in strategy tests after constructor changes
 
