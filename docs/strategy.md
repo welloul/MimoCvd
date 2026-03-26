@@ -32,7 +32,7 @@ The core of the strategy logic resides in the SignalEvaluator struct, which impl
   - SHORT: New swing high + close below midpoint + POC in upper half
 
 #### Order Parameter Calculation
-- **calculate_entry_price**: POC ± offset percentage (default: 0.1% from POC)
+- **calculate_entry_price**: POC ± 1 tick (LONG: POC + tick_size, SHORT: POC - tick_size)
 - **calculate_stop_loss**: Candle wick ± offset in ticks (default: 2 ticks)
 - **calculate_take_profit**: Entry ± (stop loss distance * risk_r_multiple) (default: 1.5R)
 - **calculate_position_size**: max_position_usd / entry_price
@@ -82,12 +82,11 @@ Main strategy orchestrator that combines all components:
 
 ## The "Hurdles"
 ### Known Limitations
-1. **Tick Size Assumption**: Stop loss calculation uses hardcoded tick size of 1.0 rather than config-derived value
-2. **Position Sizing**: Uses hardcoded max_position_usd of 1000.0 rather than config value
-3. **Lookback Dependency**: Swing detection requires sufficient history - signals delayed until lookback period satisfied
+1. **Position Sizing**: Uses hardcoded max_position_usd of 1000.0 rather than config value
+2. **Lookback Dependency**: Swing detection requires sufficient history - signals delayed until lookback period satisfied
 
 ### Technical Debt
-1. **Magic Numbers**: Some hardcoded values that should be configurable (tick size now fetched from exchange, position sizing from config)
+1. **Magic Numbers**: Some hardcoded values that should be configurable (position sizing from config)
 2. **Error Handling**: Limited error propagation - assumes operations succeed
 3. **Code Duplication**: Some logic duplicated between evaluate_signal and manage_position_exit
 4. **State Coupling**: Direct access to GlobalState creates tight coupling between strategy and state layers

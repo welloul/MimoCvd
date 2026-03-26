@@ -13,7 +13,7 @@ The cvdtrader-market-data module handles all market data processing, including W
 - **Subscription Handling**: Subscribes to trade data for configured symbols (tracks subscribed symbols to avoid duplicates)
 - **Message Parsing**: Converts WebSocket messages to internal Trade structs
 - **Error Handling**: Comprehensive error handling with logging and recovery
-- **Metadata Fetching**: Fetches exchange metadata (tick sizes) using hyperliquid-rust-sdk InfoClient
+- **Metadata Fetching**: Fetches exchange metadata (tick sizes) using hyperliquid-rust-sdk InfoClient - **Fixed**: Now correctly uses `px_decimals` instead of `sz_decimals` for tick size calculation
 - **Key Features**:
   - Async connection using tokio-tungstenite
   - Automatic reconnection with configurable retry limits and jitter

@@ -15,10 +15,15 @@
 - Graceful shutdown handling
 
 ### Changed
-- N/A (initial release)
+- **Entry Price Calculation**: Changed from percentage-based to tick-based offsets
+  - LONG signals now enter at POC + 1 tick
+  - SHORT signals now enter at POC - 1 tick
+  - Improved precision for different trading symbols with varying tick sizes
 
 ### Fixed
-- N/A (initial release)
+- **Tick Size Retrieval Bug**: Fixed WebSocket metadata parsing to use `px_decimals` instead of `sz_decimals`
+- **SignalEvaluator Constructor**: Updated all test cases to match new constructor signature (removed entry_offset_pct parameter)
+- **Compilation Errors**: Fixed 13+ compilation errors in strategy tests after constructor changes
 
 ## [Session: March 24, 2026]
 ### Added

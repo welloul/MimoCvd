@@ -13,6 +13,8 @@
 - **Preserve** the low-latency design principles in hot paths (market data processing, signal generation)
 - **Keep** the dry-run mode as the default execution mode for safety
 - **Do not remove** the circuit breaker functionality - it's critical for production stability
+- **Entry pricing is now tick-based**: LONG signals enter at POC + 1 tick, SHORT at POC - 1 tick - do not revert to percentage-based offsets
+- **Tick sizes are fetched from exchange metadata**: Use `px_decimals` field, not `sz_decimals` for price-based tick calculations
 
 ## Known Failures & Technical Debt
 1. **WebSocket Reconnection**: While implemented, the exponential backoff could be tuned for specific network conditions (jitter added for better distribution)
@@ -20,6 +22,7 @@
 3. **Configuration Validation**: Some edge cases in config validation could be strengthened
 4. **Error Handling**: Some API calls in execution gateway could benefit from more specific error types (ExecutionError enum added)
 5. **Unused Imports**: Some modules have unused imports (e.g., cvd_poc.rs) - cosmetic issue, doesn't affect functionality (cleaned up)
+6. **Entry Price Precision**: Now uses tick-based offsets instead of percentage-based for precise positioning relative to POC
 
 ## Performance Constraints
 - **Latency Target**: <1ms for indicator calculations
