@@ -101,16 +101,16 @@ impl HyperliquidWs {
         let mut tick_sizes = HashMap::new();
 
         for asset_meta in metadata.universe {
-            // Calculate tick size from sz_decimals
-            // sz_decimals = 0 -> tick_size = 1
-            // sz_decimals = 1 -> tick_size = 0.1
-            // sz_decimals = 2 -> tick_size = 0.01
-            let tick_size = 10f64.powi(-(asset_meta.sz_decimals as i32));
+            // Calculate tick size from px_decimals (price decimals)
+            // px_decimals = 0 -> tick_size = 1
+            // px_decimals = 1 -> tick_size = 0.1
+            // px_decimals = 2 -> tick_size = 0.01
+            let tick_size = 10f64.powi(-(asset_meta.px_decimals as i32));
             tick_sizes.insert(asset_meta.name.clone(), tick_size);
 
             info!(
-                "Loaded metadata for {}: tick_size={}, sz_decimals={}",
-                asset_meta.name, tick_size, asset_meta.sz_decimals
+                "Loaded metadata for {}: tick_size={}, px_decimals={}",
+                asset_meta.name, tick_size, asset_meta.px_decimals
             );
         }
 
