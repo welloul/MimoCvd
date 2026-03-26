@@ -219,16 +219,41 @@ impl SignalGenerator for SignalEvaluator {
         indicators: &IndicatorCompute,
         has_position: bool,
     ) -> Option<TradeSignal> {
+        // Debug logging for specific symbols
+        if candle.symbol == "DOGE" || candle.symbol == "ARB" {
+            tracing::info!(
+                "Evaluating signal for {}: poc={:?}, history_len={}, has_position={}",
+                candle.symbol,
+                candle.poc,
+                history.len(),
+                has_position
+            );
+        }
+
         // Pre-conditions
         if has_position {
+            if candle.symbol == "DOGE" || candle.symbol == "ARB" {
+                tracing::info!("{}: Rejected - has existing position", candle.symbol);
+            }
             return None;
         }
 
         if candle.poc.is_none() {
+            if candle.symbol == "DOGE" || candle.symbol == "ARB" {
+                tracing::info!("{}: Rejected - no POC", candle.symbol);
+            }
             return None;
         }
 
         if history.len() < self.lookback {
+            if candle.symbol == "DOGE" || candle.symbol == "ARB" {
+                tracing::info!(
+                    "{}: Rejected - insufficient history ({} < {})",
+                    candle.symbol,
+                    history.len(),
+                    self.lookback
+                );
+            }
             return None;
         }
 
@@ -238,7 +263,21 @@ impl SignalGenerator for SignalEvaluator {
         let is_new_high = self.is_new_swing_high(candle, &history);
         let is_new_low = self.is_new_swing_low(candle, &history);
 
+        if candle.symbol == "DOGE" || candle.symbol == "ARB" {
+            tracing::info!(
+                "{}: Swing check - is_new_high={}, is_new_low={}, close={:.6}, midpoint={:.6}",
+                candle.symbol,
+                is_new_high,
+                is_new_low,
+                candle.close,
+                candle.midpoint()
+            );
+        }
+
         if !is_new_high && !is_new_low {
+            if candle.symbol == "DOGE" || candle.symbol == "ARB" {
+                tracing::info!("{}: Rejected - not a new swing", candle.symbol);
+            }
             return None;
         }
 
@@ -246,7 +285,17 @@ impl SignalGenerator for SignalEvaluator {
         let signal = self.determine_direction(candle, is_new_high, is_new_low)?;
 
         if signal == Signal::None {
+            if candle.symbol == "DOGE" || candle.symbol == "ARB" {
+                tracing::info!(
+                    "{}: Rejected - signal determination returned None",
+                    candle.symbol
+                );
+            }
             return None;
+        }
+
+        if candle.symbol == "DOGE" || candle.symbol == "ARB" {
+            tracing::info!("{}: Direction determined - {:?}", candle.symbol, signal);
         }
 
         // Check for CVD flip (simplified signal condition)
@@ -259,7 +308,17 @@ impl SignalGenerator for SignalEvaluator {
             Signal::None => false,
         };
 
+        if candle.symbol == "DOGE" || candle.symbol == "ARB" {
+            tracing::info!(
+                "{}: CVD check - prev_cvd={:.1}, curr_cvd={:.1}, prev_sign={:.0}, curr_sign={:.0}, flipped={}",
+                candle.symbol, prev_candle.cvd, candle.cvd, prev_cvd_sign, curr_cvd_sign, cvd_flipped
+            );
+        }
+
         if !cvd_flipped {
+            if candle.symbol == "DOGE" || candle.symbol == "ARB" {
+                tracing::info!("{}: Rejected - no CVD flip", candle.symbol);
+            }
             return None;
         }
 
@@ -440,6 +499,57 @@ mod tests {
         let curr_candle = create_test_candle("BTC", 50100.0, 49800.0, 49975.0, 50.0, Some(49950.0)); // Positive CVD, new swing low
 
         let history = vec![hist1, hist2, prev_candle];
+
+        println!("=== SIGNAL EVALUATION DEMO ===");
+        println!(
+            "Current candle: high={:.1}, low={:.1}, close={:.1}, CVD={:.1}",
+            curr_candle.high, curr_candle.low, curr_candle.close, curr_candle.cvd
+        );
+        let prev_candle_ref = history.last().unwrap();
+        println!(
+            "Previous candle: high={:.1}, low={:.1}, close={:.1}, CVD={:.1}",
+            prev_candle_ref.high, prev_candle_ref.low, prev_candle_ref.close, prev_candle_ref.cvd
+        );
+        println!("History length: {}", history.len());
+        println!("Lookback required: {}", evaluator.lookback());
+
+        // Check swing detection
+        let is_new_high = evaluator.is_new_swing_high(&curr_candle, &history);
+        let is_new_low = evaluator.is_new_swing_low(&curr_candle, &history);
+        println!(
+            "Swing detection: is_new_high={}, is_new_low={}",
+            is_new_high, is_new_low
+        );
+
+        if is_new_high || is_new_low {
+            let midpoint = curr_candle.midpoint();
+            println!("Midpoint: {:.1}", midpoint);
+            println!(
+                "Direction check: close({:.1}) > midpoint({:.1}) = {}",
+                curr_candle.close,
+                midpoint,
+                curr_candle.close > midpoint
+            );
+
+            // Check CVD flip
+            let prev_cvd_sign = prev_candle_ref.cvd.signum();
+            let curr_cvd_sign = curr_candle.cvd.signum();
+            println!(
+                "CVD signs: prev={:.0}, curr={:.0}",
+                prev_cvd_sign, curr_cvd_sign
+            );
+
+            let cvd_flipped = prev_cvd_sign < 0.0 && curr_cvd_sign > 0.0;
+            println!("CVD flip check (LONG): prev<0 AND curr>0 = {}", cvd_flipped);
+
+            if cvd_flipped {
+                println!("✅ SIGNAL GENERATED: LONG");
+            } else {
+                println!("❌ CVD flip failed");
+            }
+        } else {
+            println!("❌ No swing detected");
+        }
 
         let signal = evaluator.evaluate_signal(&curr_candle, &history, &indicators, false);
 
