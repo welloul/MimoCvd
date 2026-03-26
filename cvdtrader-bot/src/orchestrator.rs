@@ -193,6 +193,9 @@ impl Bot {
 
                     // Process trade through candle builder
                     if let Some(completed_candle) = candle_builder.process_trade(&trade).await {
+                        // Add completed candle to state BEFORE strategy processing
+                        self.state.add_candle(completed_candle.symbol.clone(), completed_candle.clone()).await;
+
                         // Process completed candle through strategy
                         if let Some(signal) = strategy.process_candle(&completed_candle).await {
                             if signal.is_valid() {
@@ -270,6 +273,8 @@ impl Bot {
                         candle.cvd,
                         candle.poc
                     );
+
+                    // Note: Candle already added to state in trade processing branch
                 }
 
                 // Check for shutdown
