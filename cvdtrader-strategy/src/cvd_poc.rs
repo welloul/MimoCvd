@@ -77,16 +77,29 @@ impl CvdPocStrategy {
             None
         };
 
+        // Create a mutable copy of the candle with POC set
+        let mut candle_with_poc = candle.clone();
+        candle_with_poc.poc = poc;
+
         // Update indicators
-        self.indicators.process_candle(candle);
+        self.indicators.process_candle(&candle_with_poc);
 
         // Check if we have a position for this symbol
-        let has_position = self.state.has_position(&candle.symbol).await;
+        let has_position = self.state.has_position(&candle_with_poc.symbol).await;
+
+        // Get candle history for signal evaluation
+        let history = self
+            .state
+            .get_last_candles(&candle_with_poc.symbol, self.evaluator.lookback() + 1)
+            .await;
 
         // Evaluate signal
-        let signal = self
-            .evaluator
-            .evaluate_signal(candle, &self.indicators, has_position);
+        let signal = self.evaluator.evaluate_signal(
+            &candle_with_poc,
+            &history,
+            &self.indicators,
+            has_position,
+        );
 
         if let Some(ref sig) = signal {
             if sig.is_valid() {
@@ -212,12 +225,6 @@ impl CvdPocStrategy {
             self.state.set_position(symbol.to_string(), position).await;
         }
 
-        None
-    }
-
-    /// Get current VWAP for a symbol
-    pub fn get_vwap(&self, symbol: &str) -> Option<f64> {
-        // TODO: Integrate with VWAP tracker
         None
     }
 

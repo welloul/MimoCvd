@@ -7,6 +7,7 @@ pub trait SignalGenerator {
     fn evaluate_signal(
         &self,
         candle: &Candle,
+        history: &[Candle],
         indicators: &IndicatorCompute,
         has_position: bool,
     ) -> Option<TradeSignal>;
@@ -54,6 +55,11 @@ impl SignalEvaluator {
             risk_r_multiple,
             entry_offset_pct,
         }
+    }
+
+    /// Get lookback period
+    pub fn lookback(&self) -> usize {
+        self.lookback
     }
 
     /// Check if candle sets a new swing high
@@ -135,7 +141,6 @@ impl SignalEvaluator {
         candle: &Candle,
         is_new_high: bool,
         is_new_low: bool,
-        vwap: Option<f64>,
     ) -> Option<Signal> {
         let close = candle.close;
         let midpoint = candle.midpoint();
@@ -144,20 +149,12 @@ impl SignalEvaluator {
 
         // SHORT setup
         if is_new_high && close < midpoint && poc_in_upper {
-            if let Some(vwap) = vwap {
-                if close > vwap {
-                    return Some(Signal::Short);
-                }
-            }
+            return Some(Signal::Short);
         }
 
         // LONG setup
         if is_new_low && close > midpoint && poc_in_lower {
-            if let Some(vwap) = vwap {
-                if close < vwap {
-                    return Some(Signal::Long);
-                }
-            }
+            return Some(Signal::Long);
         }
 
         None
@@ -207,6 +204,7 @@ impl SignalGenerator for SignalEvaluator {
     fn evaluate_signal(
         &self,
         candle: &Candle,
+        history: &[Candle],
         indicators: &IndicatorCompute,
         has_position: bool,
     ) -> Option<TradeSignal> {
@@ -218,9 +216,6 @@ impl SignalGenerator for SignalEvaluator {
         if candle.poc.is_none() {
             return None;
         }
-
-        // Get history (simplified - in production, get from state)
-        let history = Vec::new(); // TODO: Get from state
 
         if history.len() < self.lookback {
             return None;
@@ -251,11 +246,8 @@ impl SignalGenerator for SignalEvaluator {
             SetupType::Absorption
         };
 
-        // Get VWAP (simplified - in production, get from VWAP tracker)
-        let vwap = None; // TODO: Get from VWAP tracker
-
         // Determine direction
-        let signal = self.determine_direction(candle, is_new_high, is_new_low, vwap)?;
+        let signal = self.determine_direction(candle, is_new_high, is_new_low)?;
 
         if signal == Signal::None {
             return None;

@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, RwLock};
+use tokio::task::JoinHandle;
 use tokio::time::{sleep, Duration};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use tracing::{debug, error, info, warn};
@@ -59,6 +60,8 @@ pub struct HyperliquidWs {
     shutdown_tx: broadcast::Sender<()>,
     tick_sizes: Arc<RwLock<HashMap<String, f64>>>,
     subscribed_symbols: Arc<RwLock<HashMap<String, bool>>>,
+    /// Handle to the message processing task
+    message_task: Arc<RwLock<Option<JoinHandle<()>>>>,
 }
 
 impl HyperliquidWs {
@@ -78,6 +81,7 @@ impl HyperliquidWs {
             shutdown_tx,
             tick_sizes: Arc::new(RwLock::new(HashMap::new())),
             subscribed_symbols: Arc::new(RwLock::new(HashMap::new())),
+            message_task: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -126,7 +130,7 @@ impl HyperliquidWs {
         self.tick_sizes.read().await.clone()
     }
 
-    /// Start the WebSocket connection
+    /// Start the WebSocket connection and return the message processing task handle
     pub async fn start(&self) -> Result<()> {
         info!("Connecting to Hyperliquid WebSocket: {}", self.url);
 
@@ -183,7 +187,7 @@ impl HyperliquidWs {
         let trade_tx = self.trade_tx.clone();
         let mut shutdown_rx = self.shutdown_tx.subscribe();
 
-        tokio::spawn(async move {
+        let handle = tokio::spawn(async move {
             loop {
                 tokio::select! {
                     msg = read.next() => {
@@ -215,6 +219,9 @@ impl HyperliquidWs {
                 }
             }
         });
+
+        // Store the task handle
+        *self.message_task.write().await = Some(handle);
 
         Ok(())
     }
@@ -308,45 +315,84 @@ impl HyperliquidWs {
     }
 
     /// Start with automatic reconnection
+    ///
+    /// This method continuously monitors the WebSocket connection and automatically
+    /// reconnects if the connection drops. It only exits when a shutdown signal is received.
     pub async fn start_with_reconnect(&self) -> Result<()> {
         let mut retry_count = 0;
         let max_retries = 10;
         let base_delay = Duration::from_secs(1);
+        let mut shutdown_rx = self.shutdown_tx.subscribe();
 
         loop {
-            match self.start().await {
-                Ok(_) => {
-                    info!("WebSocket connection established");
-                    retry_count = 0;
-                    // Wait for shutdown signal
-                    let mut shutdown_rx = self.shutdown_tx.subscribe();
-                    let _ = shutdown_rx.recv().await;
-                    info!("WebSocket shutting down");
-                    break;
-                }
-                Err(e) => {
-                    retry_count += 1;
-                    if retry_count >= max_retries {
-                        error!("Max retries reached, giving up: {}", e);
-                        return Err(e);
+            tokio::select! {
+                // Try to establish connection
+                result = self.start() => {
+                    match result {
+                        Ok(()) => {
+                            info!("WebSocket connection established");
+                            retry_count = 0;
+
+                            // Take the task handle out of the Option
+                            let task_handle = self.message_task.write().await.take();
+
+                            if let Some(handle) = task_handle {
+                                // Monitor the message processing task
+                                // If it exits, the connection dropped and we need to reconnect
+                                tokio::select! {
+                                    _ = handle => {
+                                        // Task completed (connection dropped)
+                                        warn!("WebSocket message processing task ended, reconnecting...");
+                                        // Continue loop to reconnect
+                                    }
+                                    _ = shutdown_rx.recv() => {
+                                        info!("Shutdown signal received, closing WebSocket");
+                                        // The message processing task will also receive the shutdown
+                                        // signal via its own shutdown_rx, so we can just break here
+                                        break;
+                                    }
+                                }
+                            } else {
+                                // No task handle, wait for shutdown
+                                let _ = shutdown_rx.recv().await;
+                                break;
+                            }
+                        }
+                        Err(e) => {
+                            retry_count += 1;
+                            if retry_count >= max_retries {
+                                error!("Max retries reached, giving up: {}", e);
+                                return Err(e);
+                            }
+
+                            // Calculate exponential backoff with jitter (0-50% of delay)
+                            let base_delay_secs = base_delay.as_secs() * 2u64.pow(retry_count - 1);
+                            // Simple jitter: use retry_count as a pseudo-random value
+                            let jitter = (retry_count as u64 * 13) % (base_delay_secs / 2 + 1);
+                            let delay = Duration::from_secs(base_delay_secs + jitter);
+
+                            warn!(
+                                "WebSocket connection failed (retry {}/{}): {}. Retrying in {:?}",
+                                retry_count, max_retries, e, delay
+                            );
+                            sleep(delay).await;
+                        }
                     }
-
-                    // Calculate exponential backoff with jitter (0-50% of delay)
-                    let base_delay_secs = base_delay.as_secs() * 2u64.pow(retry_count - 1);
-                    // Simple jitter: use retry_count as a pseudo-random value
-                    let jitter = (retry_count as u64 * 13) % (base_delay_secs / 2 + 1);
-                    let delay = Duration::from_secs(base_delay_secs + jitter);
-
-                    warn!(
-                        "WebSocket connection failed (retry {}/{}): {}. Retrying in {:?}",
-                        retry_count, max_retries, e, delay
-                    );
-                    sleep(delay).await;
+                }
+                // Check for shutdown signal even while trying to connect
+                _ = shutdown_rx.recv() => {
+                    info!("Shutdown signal received during connection attempt");
+                    break;
                 }
             }
         }
 
         Ok(())
+    }
+
+    /// Check if the message processing task is running
+    pub async fn is_connected(&self) -> bool {
+        self.message_task.read().await.is_some()
     }
 }
 

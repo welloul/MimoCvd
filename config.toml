@@ -9,9 +9,9 @@ symbols = ["ZEC", "SUI", "SOL", "TAO", "DOGE", "XMR", "ARB", "HYPE", "AVAX"]
 
 [strategy]
 name = "cvd_poc"
-lookback = 20
-cvd_exhaustion_ratio = 0.70
-cvd_absorption_pctile = 0.90
+lookback = 5
+cvd_exhaustion_ratio = 0.85
+cvd_absorption_pctile = 0.75
 sl_offset = 2
 risk_r_multiple = 1.5
 entry_offset_pct = 0.001  # 0.1%

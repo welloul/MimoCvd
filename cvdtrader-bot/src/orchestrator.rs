@@ -121,7 +121,12 @@ impl Bot {
 
         // Start components
         info!("Starting WebSocket connection");
-        ws.start_with_reconnect().await?;
+        // Spawn WebSocket reconnection as background task (non-blocking)
+        let ws_handle = tokio::spawn(async move {
+            if let Err(e) = ws.start_with_reconnect().await {
+                error!("WebSocket reconnection failed: {}", e);
+            }
+        });
 
         info!("Starting order TTL tracker");
         ttl_tracker.start().await;
@@ -159,8 +164,9 @@ impl Bot {
         info!("Shutting down bot");
         self.state.set_running(false).await;
 
-        // Wait for fill tracker to finish
-        fill_tracker_handle.await?;
+        // Wait for background tasks to finish
+        let _ = fill_tracker_handle.await;
+        let _ = ws_handle.await;
 
         info!("Bot stopped");
         Ok(())
