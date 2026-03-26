@@ -144,16 +144,21 @@ impl SignalEvaluator {
     ) -> Option<Signal> {
         let close = candle.close;
         let midpoint = candle.midpoint();
-        let poc_in_upper = candle.poc_in_upper_half();
-        let poc_in_lower = candle.poc_in_lower_half();
+        // Temporarily comment out POC validation for testing signal generation
+        // let poc_in_upper = candle.poc_in_upper_half();
+        // let poc_in_lower = candle.poc_in_lower_half();
 
         // SHORT setup
-        if is_new_high && close < midpoint && poc_in_upper {
+        if is_new_high && close < midpoint
+        /* && poc_in_upper */
+        {
             return Some(Signal::Short);
         }
 
         // LONG setup
-        if is_new_low && close > midpoint && poc_in_lower {
+        if is_new_low && close > midpoint
+        /* && poc_in_lower */
+        {
             return Some(Signal::Long);
         }
 
