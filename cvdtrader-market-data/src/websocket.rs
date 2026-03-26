@@ -101,16 +101,19 @@ impl HyperliquidWs {
         let mut tick_sizes = HashMap::new();
 
         for asset_meta in metadata.universe {
-            // Calculate tick size from sz_decimals
-            // sz_decimals = 0 -> tick_size = 1
-            // sz_decimals = 1 -> tick_size = 0.1
-            // sz_decimals = 2 -> tick_size = 0.01
-            let tick_size = 10f64.powi(-(asset_meta.sz_decimals as i32));
+            // For crypto, use a conservative tick size based on typical price precision
+            // Most crypto pairs have tick sizes of 0.0001 or smaller
+            let tick_size = match asset_meta.name.as_str() {
+                // Low-value coins need finer precision
+                "DOGE" | "ARB" | "SUI" => 0.00001,
+                // Other crypto pairs
+                _ => 0.0001,
+            };
             tick_sizes.insert(asset_meta.name.clone(), tick_size);
 
             info!(
-                "Loaded metadata for {}: tick_size={}, sz_decimals={}",
-                asset_meta.name, tick_size, asset_meta.sz_decimals
+                "Loaded metadata for {}: tick_size={}",
+                asset_meta.name, tick_size
             );
         }
 
